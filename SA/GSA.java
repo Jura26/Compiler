@@ -53,20 +53,19 @@ public class GSA {
             }
 
             if(!line.startsWith(" ")) {
-                for (Production production : productions)
-                    if (production.left.equals(line))
-                        temp = production;
-
-                if (temp == null) {
-                    temp = new Production(line, new ArrayList<String>());
+                temp = new Production(line, new ArrayList<String>());
+                productions.add(temp);
+            } else {
+                if(!productions.getLast().right.isEmpty()){
+                    temp = new Production(productions.getLast().left, new ArrayList<String>());
                     productions.add(temp);
                 }
-            } else {
 
+                String[] parts = line.split(" ");
+                temp.right.addAll(Arrays.asList(parts));
+                temp.right.removeFirst();
             }
-
         }
-
     }
 
     public static void main(String[] args) {
@@ -76,7 +75,19 @@ public class GSA {
         catch (IOException e) {
             e.printStackTrace();
         }
-        ArrayList<ArrayList<Boolean>> DirectlyStartsWith = new ArrayList<>();
+        boolean[][] DirectlyStartsWith = new boolean[unterminated.size()][unterminated.size() + terminated.size()];
+        for (Production prod : productions) {
+            int i = unterminated.indexOf(prod.left);
+
+            int j;
+            String first = prod.right.getFirst();
+            if(unterminated.contains(first))
+                j =  unterminated.indexOf(first);
+            else
+                j = terminated.indexOf(first) + unterminated.size() - 1;
+
+            DirectlyStartsWith[i][j] = true;
+        }
 
     }
 }
