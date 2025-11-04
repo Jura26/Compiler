@@ -236,7 +236,7 @@ public class GLA {
                 continue;
             }
 
-            // ⿤ Rules
+            // 4 Rules
             if (line.startsWith("<")) {
                 currentRule = new Rule();
                 int end = line.indexOf(">");
