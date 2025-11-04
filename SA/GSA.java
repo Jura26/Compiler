@@ -1,16 +1,71 @@
 package SA;
+import javax.swing.plaf.nimbus.State;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.*;
 
 public class GSA {
-    private static class Production{
+
+    static class State{
+        Production item;
+        HashSet<String> T;
+
+        public State(Production item, HashSet<String> T){
+            this.item = item;
+            this.T = T;
+        }
+        @Override
+        public String toString(){
+            return item.toString() + T;
+        }
+        @Override
+        public boolean equals(Object o){
+            if(o instanceof State s)
+                return item.equals(s.item) && T.equals(s.T);
+            return false;
+        }
+        @Override
+        public int hashCode(){
+            return Objects.hash(item, T);
+        }
+    }
+
+    static class Transition{
+        State start;
+        State end;
+        String transSymb;
+        public Transition(State start, State end, String transSymb){
+            this.start = start;
+            this.end = end;
+            this.transSymb = transSymb;
+        }
+
+        @Override
+        public String toString(){
+            return start.toString() + " -> " + end.toString() + " -> " + transSymb;
+        }
+        @Override
+        public boolean equals(Object o){
+            if(o instanceof Transition t)
+                return start.equals(t.start) && end.equals(t.end) &&  transSymb.equals(t.transSymb);
+            return false;
+        }
+        @Override
+        public int hashCode(){
+            return Objects.hash(start, end, transSymb);
+        }
+    }
+
+
+    static class Production{
+        // Left side of production
         String left;
+        // Right side of production
         ArrayList<String> right = new ArrayList<>();
 
+        // Constructor
         Production(String left, ArrayList<String> right){
             this.left = left;
             this.right = right;
@@ -19,32 +74,54 @@ public class GSA {
             this.left = left;
             this.right.add(right);
         }
-    }
 
+        @Override
+        public String toString(){
+            return left + " -> " + right;
+        }
+
+        @Override
+        public boolean equals(Object o){
+            if(o instanceof Production t)
+                return left.equals(t.left) && right.equals(t.right);
+            return false;
+        }
+        @Override
+        public int hashCode(){
+            return Objects.hash(left, right);
+        }
+    }
 
     static ArrayList<String> unterminated = new ArrayList<>();
     static ArrayList<String> terminated = new ArrayList<>();
     static ArrayList<String> syncSymb = new ArrayList<>();
     static ArrayList<Production> productions = new ArrayList<>();
 
-    public static void ParseInput() throws IOException {
+    // Function that parses input and stores it into above variables
+    private static void ParseInput() throws IOException {
         BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
         String line;
         Production temp = null;
         while ((line = br.readLine()) != null) {
             if (line.isEmpty()) continue;
+
+            // Unterminated symbols
             if (line.startsWith("%V")){
                 String[] parts = line.split(" ");
                 unterminated.addAll(Arrays.asList(parts));
                 unterminated.removeFirst();
                 continue;
             }
+
+            // Terminated symbols
             if (line.startsWith("%T")){
                 String[] parts = line.split(" ");
                 terminated.addAll(Arrays.asList(parts));
                 terminated.removeFirst();
                 continue;
             }
+
+            // Synchronisation terminated symbols
             if (line.startsWith("%Syn")){
                 String[] parts = line.split(" ");
                 syncSymb.addAll(Arrays.asList(parts));
@@ -52,11 +129,15 @@ public class GSA {
                 continue;
             }
 
+            // All productions
             if(!line.startsWith(" ")) {
+                // Left side of production
                 temp = new Production(line, new ArrayList<String>());
                 productions.add(temp);
             } else {
+                // Right side of production
                 if(!productions.getLast().right.isEmpty()){
+                    // If it is not the first row it should construct next production instead of concatenating with |
                     temp = new Production(productions.getLast().left, new ArrayList<String>());
                     productions.add(temp);
                 }
@@ -68,6 +149,131 @@ public class GSA {
         }
     }
 
+    static boolean[][] StartsWithTable;
+
+    // Generate StartsWithTable and fills it
+    private static void generateStartsWith(){
+        boolean[][] DirectlyStartsWith = new boolean[unterminated.size()][unterminated.size() + terminated.size()];
+        for (int i = 0; i < unterminated.size(); i++)
+            for(int j = 0; j < unterminated.size() + terminated.size(); j++)
+                DirectlyStartsWith[i][j] = false;
+
+        // Fill DirectlyStartsWith
+        for (Production prod : productions) {
+            if(prod.right.getFirst().equals("$")) continue;
+
+            int i = unterminated.indexOf(prod.left);
+
+            int j;
+
+            for(String right : prod.right){
+                if(empty.contains(right)){
+                    j =  unterminated.indexOf(right);
+                    DirectlyStartsWith[i][j] = true;
+                } else {
+                    if(unterminated.contains(right))
+                        j =  unterminated.indexOf(right);
+                    else
+                        j = terminated.indexOf(right) + unterminated.size();
+
+                    DirectlyStartsWith[i][j] = true;
+                    break;
+                }
+
+            }
+        }
+
+        boolean[][] StartsWith = Arrays.copyOf(DirectlyStartsWith, DirectlyStartsWith.length);
+
+        // Fill (undirect) StartsWith
+        for(int i = 0; i < unterminated.size(); i++){
+            HashSet<Integer> used = new HashSet<>();
+            Stack<Integer> stack = new Stack<>();
+            for(int j = 0; j < unterminated.size(); j++)
+                if(DirectlyStartsWith[i][j])
+                    stack.push(j);
+            while(!stack.isEmpty()){
+                int top = stack.pop();
+                if(used.contains(top)) continue;
+                for(int j = unterminated.size(); j < terminated.size() + unterminated.size(); j++)
+                    if(DirectlyStartsWith[top][j])
+                        StartsWith[i][j] = true;
+                used.add(top);
+                for(int j = 0; j < unterminated.size(); j++)
+                    if(DirectlyStartsWith[top][j]){
+                        StartsWith[i][j] = true;
+                        stack.push(j);
+                    }
+            }
+        }
+
+        // Keep only the right side of the table
+        StartsWithTable = new boolean[unterminated.size()][terminated.size()];
+        for(int i = 0; i < unterminated.size(); i++)
+            for(int j = unterminated.size(); j < unterminated.size() + terminated.size(); j++){
+                int idx = j - unterminated.size();
+                StartsWithTable[i][idx] = StartsWith[i][j];
+            }
+    }
+
+    // Decide which undetermined is "empty"
+    static HashSet<String> empty;
+    private static void calculateEmpty(){
+        empty = new HashSet<>();
+        for (Production production : productions)
+            if (production.right.getFirst().equals("$"))
+                empty.add(production.left);
+
+        HashSet<String> empty2 = new HashSet<>();
+        while(!empty.equals(empty2)){
+            empty2.clear();
+            empty2.addAll(empty);
+            for (Production production : productions) {
+                boolean add = true;
+                for (String right : production.right)
+                    if (!empty2.contains(right)) {
+                        add = false;
+                        break;
+                    }
+                if (add)
+                    empty.add(production.left);
+            }
+        }
+    }
+
+    private static HashSet<String> startsWith(ArrayList<String> list){
+        HashSet<String> res = new HashSet<>();
+        if(list.isEmpty() || list.getFirst().equals("$")) return res;
+        for (String s : list) {
+            if (terminated.contains(s)) {
+                res.add(s);
+                break;
+            }
+            if (!empty.contains(s)) {
+                res.addAll(startsWith(s));
+                break;
+            }
+            res.addAll(startsWith(s));
+        }
+        return res;
+    }
+    private static HashSet<String> startsWith(String s){
+        HashSet<String> res = new HashSet<>();
+
+        int idx = unterminated.indexOf(s);
+
+        for(int j = 0; j < terminated.size(); j++)
+            if(StartsWithTable[idx][j])
+                res.add(terminated.get(j));
+        return res;
+    }
+
+    private static HashSet<Transition> constructNKA(){
+        HashSet<Transition> transitions = new HashSet<>();
+        unterminated.addFirst("<S'>");
+        return null;
+    }
+
     public static void main(String[] args) {
         try {
             ParseInput();
@@ -75,19 +281,9 @@ public class GSA {
         catch (IOException e) {
             e.printStackTrace();
         }
-        boolean[][] DirectlyStartsWith = new boolean[unterminated.size()][unterminated.size() + terminated.size()];
-        for (Production prod : productions) {
-            int i = unterminated.indexOf(prod.left);
+        calculateEmpty();
+        generateStartsWith();
 
-            int j;
-            String first = prod.right.getFirst();
-            if(unterminated.contains(first))
-                j =  unterminated.indexOf(first);
-            else
-                j = terminated.indexOf(first) + unterminated.size() - 1;
-
-            DirectlyStartsWith[i][j] = true;
-        }
-
+        HashSet<Transition> transitions = constructNKA();
     }
 }
