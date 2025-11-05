@@ -1,7 +1,5 @@
 package SA;
-import javax.swing.plaf.nimbus.State;
 import java.io.BufferedReader;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.*;
@@ -13,11 +11,7 @@ public class GSA {
         HashSet<State> states;
         HashSet<State> acceptedStates;
         State startingState;
-        public NKA(){
-            transitions = new HashSet<>();
-            states = new HashSet<>();
-            acceptedStates = new HashSet<>();
-        }
+
         public NKA(HashSet<Transition> transitions, HashSet<State> states, HashSet<State> acceptedStates, State startingState){
             this.transitions = transitions;
             this.states = states;
@@ -97,16 +91,12 @@ public class GSA {
         // Left side of production
         String left;
         // Right side of production
-        ArrayList<String> right = new ArrayList<>();
+        ArrayList<String> right;
 
         // Constructor
         Production(String left, ArrayList<String> right){
             this.left = left;
             this.right = right;
-        }
-        Production(String left,  String right){
-            this.left = left;
-            this.right.add(right);
         }
 
         @Override
@@ -166,13 +156,13 @@ public class GSA {
             // All productions
             if(!line.startsWith(" ")) {
                 // Left side of production
-                temp = new Production(line, new ArrayList<String>());
+                temp = new Production(line, new ArrayList<>());
                 productions.add(temp);
             } else {
                 // Right side of production
                 if(!productions.getLast().right.isEmpty()){
                     // If it is not the first row it should construct next production instead of concatenating with |
-                    temp = new Production(productions.getLast().left, new ArrayList<String>());
+                    temp = new Production(productions.getLast().left, new ArrayList<>());
                     productions.add(temp);
                 }
 
