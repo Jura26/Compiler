@@ -295,7 +295,7 @@ public class GSA {
     private static NKA constructNKA(){
         HashSet<Transition> transitions = new HashSet<>();
         HashSet<State> currStates = new HashSet<>();
-        Production temp = new Production("S'", new ArrayList<>());
+        Production temp = new Production("<S'>", new ArrayList<>());
         State startingState = new State(temp, new HashSet<>(), 0);
 
         for(Production production : productions)
@@ -303,6 +303,8 @@ public class GSA {
                 HashSet<String> T = new HashSet<>();
                 T.add("END");
                 State S = new State(production, T, 0);
+                if(S.item.right.getFirst().equals("$"))
+                    S.pointer++;
                 currStates.add(S);
 
                 transitions.add(new Transition(startingState, S, "$"));
@@ -311,8 +313,9 @@ public class GSA {
         HashSet<State> allStates = new HashSet<>(currStates);
         allStates.add(startingState);
 
-        boolean finished = true;
+        boolean finished;
         do {
+            finished = true;
             HashSet<State> currStates2 = new HashSet<>();
             for (State curr : currStates) {
                 if (curr.pointer == curr.item.right.size()) continue;
@@ -333,6 +336,8 @@ public class GSA {
                         HashSet<String> newT = new HashSet<>(curr.T);
                         newT.addAll(startsWith(curr.sufix()));
                         State newS = new State(production, newT, 0);
+                        if(newS.item.right.getFirst().equals("$"))
+                            newS.pointer++;
                         if(allStates.add(newS))
                             currStates2.add(newS);
                         transitions.add(new Transition(curr, newS, "$"));
@@ -362,6 +367,7 @@ public class GSA {
         calculateEmpty();
         generateStartsWith();
         NKA nka = constructNKA();
-
+        for(Transition s: nka.transitions)
+            System.out.println(s);
     }
 }
