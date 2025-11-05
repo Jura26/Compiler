@@ -124,13 +124,6 @@ public class GSA {
         }
     }
 
-    static Map<Integer, State> stateCache = new HashMap<>();
-    private static State getOrCreateState(Production prod, Set<String> T, int pointer) {
-        int key = Objects.hash(prod, T, pointer);
-        stateCache.computeIfAbsent(key, _ -> new State(prod, new HashSet<>(T), pointer));
-        return stateCache.get(key);
-    }
-
     static class Production{
         // Left side of production
         String left;
@@ -346,13 +339,11 @@ public class GSA {
         }
     }
 
-
-
     private static NKA constructNKA(){
         HashSet<NKATransition> transitions = new HashSet<>();
         HashSet<State> currStates = new HashSet<>();
         Production temp = new Production("<S'>", new ArrayList<>());
-        State startingState = getOrCreateState(temp, new HashSet<>(), 0);
+        State startingState = new State(temp, new HashSet<>(), 0);
 
         for(Production production : productions)
             if(production.left.equals(unterminated.getFirst())) {
@@ -360,9 +351,9 @@ public class GSA {
                 T.add("END");
                 State S;
                 if(production.right.getFirst().equals("$"))
-                    S = getOrCreateState(production, T, 1);
+                    S = new State(production, T, 1);
                 else
-                    S = getOrCreateState(production, T, 0);
+                    S = new State(production, T, 0);
                 currStates.add(S);
 
                 transitions.add(new NKATransition(startingState, S, "$"));
@@ -382,7 +373,7 @@ public class GSA {
                 finished = false;
 
                 HashSet<String> T = new HashSet<>(curr.T);
-                State newState = getOrCreateState(curr.item, T, curr.pointer + 1);
+                State newState = new State(curr.item, T, curr.pointer + 1);
 
                 if(allStates.add(newState))
                     currStates2.add(newState);
@@ -412,13 +403,14 @@ public class GSA {
 
                         State newS;
                         if(production.right.getFirst().equals("$"))
-                            newS = getOrCreateState(production, newT, 1);
+                            newS = new State(production, newT, 1);
                         else
-                            newS = getOrCreateState(production, newT, 0);
+                            newS = new State(production, newT, 0);
                         if(allStates.add(newS))
                             currStates2.add(newS);
                         transitions.add(new NKATransition(curr, newS, "$"));
                     }
+
                 }
 
             }
@@ -521,7 +513,6 @@ public class GSA {
                 dka.transitions.add(new DKATransition(subset, newSubset, symb));
             }
         }
-
         return dka;
     }
 
@@ -535,8 +526,6 @@ public class GSA {
         calculateEmpty();
         generateStartsWith();
         NKA nka = constructNKA();
-        System.out.println(nka.transitions.size());
-        System.out.println(nka.states.size());
         DKA dka = NKAtoDKA(nka);
 
     }
