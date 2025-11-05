@@ -6,11 +6,18 @@ import java.util.*;
 
 public class GSA {
 
-    static class NKA{
+    public static class NKA{
         HashSet<Transition> transitions;
         HashSet<State> states;
         HashSet<State> acceptedStates;
         State startingState;
+
+        public NKA(){
+            transitions = new HashSet<>();
+            states = new HashSet<>();
+            acceptedStates = new HashSet<>();
+            startingState = null;
+        }
 
         public NKA(HashSet<Transition> transitions, HashSet<State> states, HashSet<State> acceptedStates, State startingState){
             this.transitions = transitions;
@@ -20,7 +27,22 @@ public class GSA {
         }
     }
 
-    static class State{
+    public static class DKA{
+        HashSet<DKATransition> transitions;
+        HashSet<Set<State>> states;
+        HashSet<Set<State>> acceptedStates;
+        Set<State> startingState;
+
+        public DKA(){
+            transitions = new HashSet<>();
+            states = new HashSet<>();
+            acceptedStates = new HashSet<>();
+            startingState = new HashSet<>();
+        }
+
+    }
+
+    public static class State{
         Production item;
         int pointer;
         HashSet<String> T;
@@ -60,7 +82,7 @@ public class GSA {
         }
     }
 
-    static class Transition{
+    public static class Transition{
         State start;
         State end;
         String transSymb;
@@ -86,8 +108,27 @@ public class GSA {
         }
     }
 
+    static class DKATransition{
+        Set<State> start;
+        Set<State> end;
+        String transSymb;
+        public DKATransition(Set<State> start, Set<State> end, String transSymb){
+            this.start = start;
+            this.end = end;
+            this.transSymb = transSymb;
+        }
 
-    static class Production{
+        @Override
+        public String toString(){
+            return start.toString() + " -> " + end.toString() + " -> " + transSymb;
+        }
+        @Override
+        public int hashCode(){
+            return Objects.hash(start, end, transSymb);
+        }
+    }
+
+    public static class Production{
         // Left side of production
         String left;
         // Right side of production
@@ -355,6 +396,86 @@ public class GSA {
                 acceptedStates.add(state);
 
         return new NKA(transitions, allStates, acceptedStates, startingState);
+    }
+
+    private static DKA NKAtoDKA(NKA enka){
+        NKA nka = new NKA();
+        DKA dka = new DKA();
+
+        // eNKA -> NKA
+        // states remain the same, starting state also
+        nka.states = new HashSet<>(enka.states);
+        nka.startingState = enka.startingState;
+        // acceptable states
+        for (Transition t : enka.transitions) {
+            if (t.start == enka.startingState && t.transSymb.equals("$")) {
+                State temp = t.end;
+                if (enka.acceptedStates.contains(temp)) {
+                    nka.acceptedStates.add(t.start);
+                    break;
+                }
+            }
+        }
+        nka.transitions = new HashSet<>(enka.transitions);
+
+        // NKA -> DKA
+        // all subsets of states
+        List<State> stateList = new ArrayList<>(nka.states);
+        int n = stateList.size();
+        HashSet<Set<State>> setOfSubsets = new HashSet<>();
+
+        int subsetNumber = 1 << n;
+        for (int i = 0; i < subsetNumber; i++) {
+            Set<State> subset = new HashSet<>();
+            for (int j = 0; j < n; j++) {
+                if ((i & (1 << j)) != 0) {
+                    subset.add(stateList.get(j));
+                }
+            }
+            setOfSubsets.add(subset);
+        }
+
+        dka.states = setOfSubsets;
+
+        // acceptable states
+        for (Set<State> subset : setOfSubsets) {
+            for (State state : subset) {
+                if (nka.acceptedStates.contains(state)){
+                    dka.acceptedStates.add(subset);
+                    break;
+                }
+            }
+        }
+
+        // starting state in a set
+        dka.startingState = new HashSet<>();
+        dka.startingState.add(nka.startingState);
+
+        // transition functions
+        // take all transition symbols from nka
+        Set<String> alphabet = new HashSet<>();
+        for (Transition t : nka.transitions) {
+            if (!t.transSymb.equals("$")) { // izuzmi epsilon
+                alphabet.add(t.transSymb);
+            }
+        }
+
+        // generate all new transitions for dka
+        for (Set<State> subset : setOfSubsets) {
+            for (String symb : alphabet) {
+                Set<State> newSubset = new HashSet<>();
+                for (State s : subset) {
+                    for (Transition t : nka.transitions) {
+                        if (t.start.equals(s) && t.transSymb.equals(symb)) {
+                            newSubset.add(t.end);
+                        }
+                    }
+                }
+                dka.transitions.add(new DKATransition(subset, newSubset, symb));
+            }
+        }
+
+        return dka;
     }
 
     public static void main(String[] args) {
