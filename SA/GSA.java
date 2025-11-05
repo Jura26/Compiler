@@ -6,24 +6,47 @@ import java.util.*;
 
 public class GSA {
 
-    public static class NKA{
-        HashSet<Transition> transitions;
+    static class NKA{
+        HashSet<NKATransition> transitions;
         HashSet<State> states;
         HashSet<State> acceptedStates;
         State startingState;
 
-        public NKA(){
+        public NKA(HashSet<NKATransition> transitions, HashSet<State> states, HashSet<State> acceptedStates, State startingState){
+            this.transitions = transitions;
+            this.states = states;
+            this.acceptedStates = acceptedStates;
+            this.startingState = startingState;
+        }
+
+        public NKA() {
             transitions = new HashSet<>();
             states = new HashSet<>();
             acceptedStates = new HashSet<>();
             startingState = null;
         }
+    }
 
-        public NKA(HashSet<Transition> transitions, HashSet<State> states, HashSet<State> acceptedStates, State startingState){
-            this.transitions = transitions;
-            this.states = states;
-            this.acceptedStates = acceptedStates;
-            this.startingState = startingState;
+    static class NKATransition{
+        State start;
+        State end;
+        String transSymb;
+        int hashCode;
+
+        public NKATransition(State start, State end, String transSymb){
+            this.start = start;
+            this.end = end;
+            this.transSymb = transSymb;
+            this.hashCode = Objects.hash(start, end, transSymb);
+        }
+
+        @Override
+        public String toString(){
+            return start.toString() + " -> " + end.toString() + " -> " + transSymb;
+        }
+        @Override
+        public boolean equals(Object o){
+            return o instanceof State s && hashCode == s.hashCode;
         }
     }
 
@@ -38,73 +61,6 @@ public class GSA {
             states = new HashSet<>();
             acceptedStates = new HashSet<>();
             startingState = new HashSet<>();
-        }
-
-    }
-
-    public static class State{
-        Production item;
-        int pointer;
-        HashSet<String> T;
-        boolean isStart;
-
-        public State(Production item, HashSet<String> T, int pointer){
-            this.item = item;
-            this.T = T;
-            this.pointer = pointer;
-            this.isStart = false;
-        }
-
-        public String nextSymb(){
-            return item.right.get(pointer);
-        }
-
-        public ArrayList<String> sufix(){
-            ArrayList<String> res = new ArrayList<>();
-            for(int i = pointer + 1; i < item.right.size(); i++)
-                res.add(item.right.get(i));
-            return res;
-        }
-
-        @Override
-        public String toString(){
-            return item.toString() + T + " " + pointer;
-        }
-        @Override
-        public boolean equals(Object o){
-            if(o instanceof State s)
-                return item.equals(s.item) && T.equals(s.T) &&  pointer == s.pointer;
-            return false;
-        }
-        @Override
-        public int hashCode(){
-            return Objects.hash(item, T, pointer);
-        }
-    }
-
-    public static class Transition{
-        State start;
-        State end;
-        String transSymb;
-        public Transition(State start, State end, String transSymb){
-            this.start = start;
-            this.end = end;
-            this.transSymb = transSymb;
-        }
-
-        @Override
-        public String toString(){
-            return start.toString() + " -> " + end.toString() + " -> " + transSymb;
-        }
-        @Override
-        public boolean equals(Object o){
-            if(o instanceof Transition t)
-                return start.equals(t.start) && end.equals(t.end) &&  transSymb.equals(t.transSymb);
-            return false;
-        }
-        @Override
-        public int hashCode(){
-            return Objects.hash(start, end, transSymb);
         }
     }
 
@@ -128,16 +84,61 @@ public class GSA {
         }
     }
 
-    public static class Production{
+    static class State{
+        Production item;
+        int pointer;
+        HashSet<String> T;
+        boolean isStart;
+        int hashCode;
+
+        public State(Production item, HashSet<String> T, int pointer){
+            this.item = item;
+            this.T = T;
+            this.pointer = pointer;
+            this.isStart = false;
+            this.hashCode = Objects.hash(item, T, pointer);
+        }
+
+        public String nextSymb(){
+            return item.right.get(pointer);
+        }
+
+        public ArrayList<String> suffix(){
+            ArrayList<String> res = new ArrayList<>();
+            for(int i = pointer + 1; i < item.right.size(); i++)
+                res.add(item.right.get(i));
+            return res;
+        }
+
+        @Override
+        public String toString(){
+            return item.toString() + T + " " + pointer;
+        }
+        @Override
+        public boolean equals(Object o){
+            return o instanceof State s && hashCode == s.hashCode;
+        }
+    }
+
+    static Map<String, State> stateCache = new HashMap<>();
+    private static State getOrCreateState(Production prod, Set<String> T, int pointer) {
+        String key = prod.left + prod.right + pointer + T.toString();
+        stateCache.computeIfAbsent(key, _ -> new State(prod, new HashSet<>(T), pointer));
+        return stateCache.get(key);
+    }
+
+    static class Production{
         // Left side of production
         String left;
         // Right side of production
         ArrayList<String> right;
+        int hashCode;
 
         // Constructor
         Production(String left, ArrayList<String> right){
             this.left = left;
             this.right = right;
+            this.hashCode = Objects.hash(left, right);
         }
 
         @Override
@@ -147,13 +148,7 @@ public class GSA {
 
         @Override
         public boolean equals(Object o){
-            if(o instanceof Production t)
-                return left.equals(t.left) && right.equals(t.right);
-            return false;
-        }
-        @Override
-        public int hashCode(){
-            return Objects.hash(left, right);
+            return o instanceof State s && hashCode == s.hashCode;
         }
     }
 
@@ -208,6 +203,7 @@ public class GSA {
                 }
 
                 String[] parts = line.split(" ");
+                assert temp != null;
                 temp.right.addAll(Arrays.asList(parts));
                 temp.right.removeFirst();
             }
@@ -215,6 +211,7 @@ public class GSA {
     }
 
     static boolean[][] StartsWithTable;
+    static Map<ArrayList<String>, HashSet<String>> startsWithCache = new HashMap<>();
 
     // Generate StartsWithTable and fills it
     private static void generateStartsWith(){
@@ -279,6 +276,42 @@ public class GSA {
                 int idx = j - unterminated.size();
                 StartsWithTable[i][idx] = StartsWith[i][j];
             }
+
+        // Precompute Starts With
+        startsWithCache.put(new ArrayList<>(), new HashSet<>());
+        ArrayList<String> temp = new ArrayList<>();
+        temp.add("$");
+        startsWithCache.put(temp, new HashSet<>());
+
+        for(Production prod : productions){
+            if(prod.right.isEmpty() || prod.right.getFirst().equals("$")) continue;
+
+            for(int i = 0; i < prod.right.size(); i++){
+                ArrayList<String> key = new ArrayList<>();
+                for(int j = i; j < prod.right.size(); j++)
+                    key.add(prod.right.get(j));
+
+                HashSet<String> value = new HashSet<>();
+                for (String s : key) {
+                    if (terminated.contains(s)) {
+                        value.add(s);
+                        break;
+                    }
+                    if (!empty.contains(s)) {
+                        int idx = unterminated.indexOf(s);
+                        for(int j = 0; j < terminated.size(); j++)
+                            if(StartsWithTable[idx][j])
+                                value.add(terminated.get(j));
+                        break;
+                    }
+                    int idx = unterminated.indexOf(s);
+                    for(int j = 0; j < terminated.size(); j++)
+                        if(StartsWithTable[idx][j])
+                            value.add(terminated.get(j));
+                }
+                startsWithCache.put(key, value);
+            }
+        }
     }
 
     // Decide which undetermined is "empty"
@@ -306,49 +339,26 @@ public class GSA {
         }
     }
 
-    private static HashSet<String> startsWith(ArrayList<String> list){
-        HashSet<String> res = new HashSet<>();
-        if(list.isEmpty() || list.getFirst().equals("$")) return res;
-        for (String s : list) {
-            if (terminated.contains(s)) {
-                res.add(s);
-                break;
-            }
-            if (!empty.contains(s)) {
-                res.addAll(startsWith(s));
-                break;
-            }
-            res.addAll(startsWith(s));
-        }
-        return res;
-    }
-    private static HashSet<String> startsWith(String s){
-        HashSet<String> res = new HashSet<>();
 
-        int idx = unterminated.indexOf(s);
-
-        for(int j = 0; j < terminated.size(); j++)
-            if(StartsWithTable[idx][j])
-                res.add(terminated.get(j));
-        return res;
-    }
 
     private static NKA constructNKA(){
-        HashSet<Transition> transitions = new HashSet<>();
+        HashSet<NKATransition> transitions = new HashSet<>();
         HashSet<State> currStates = new HashSet<>();
         Production temp = new Production("<S'>", new ArrayList<>());
-        State startingState = new State(temp, new HashSet<>(), 0);
+        State startingState = getOrCreateState(temp, new HashSet<>(), 0);
 
         for(Production production : productions)
             if(production.left.equals(unterminated.getFirst())) {
                 HashSet<String> T = new HashSet<>();
                 T.add("END");
-                State S = new State(production, T, 0);
-                if(S.item.right.getFirst().equals("$"))
-                    S.pointer++;
+                State S;
+                if(production.right.getFirst().equals("$"))
+                    S = getOrCreateState(production, T, 1);
+                else
+                    S = getOrCreateState(production, T, 0);
                 currStates.add(S);
 
-                transitions.add(new Transition(startingState, S, "$"));
+                transitions.add(new NKATransition(startingState, S, "$"));
             }
 
         HashSet<State> allStates = new HashSet<>(currStates);
@@ -363,25 +373,27 @@ public class GSA {
                 finished = false;
 
                 HashSet<String> T = new HashSet<>(curr.T);
-                State newState = new State(curr.item, T, curr.pointer + 1);
+                State newState = getOrCreateState(curr.item, T, curr.pointer + 1);
 
                 if(allStates.add(newState))
                     currStates2.add(newState);
 
-                transitions.add(new Transition(curr, newState, curr.nextSymb()));
+                transitions.add(new NKATransition(curr, newState, curr.nextSymb()));
 
                 if(terminated.contains(curr.nextSymb())) continue;
 
                 for(Production production : productions){
                     if(production.left.equals(curr.nextSymb())) {
                         HashSet<String> newT = new HashSet<>(curr.T);
-                        newT.addAll(startsWith(curr.sufix()));
-                        State newS = new State(production, newT, 0);
-                        if(newS.item.right.getFirst().equals("$"))
-                            newS.pointer++;
+                        newT.addAll(startsWithCache.get(curr.suffix()));
+                        State newS;
+                        if(production.right.getFirst().equals("$"))
+                            newS = getOrCreateState(production, newT, 1);
+                        else
+                            newS = getOrCreateState(production, newT, 0);
                         if(allStates.add(newS))
                             currStates2.add(newS);
-                        transitions.add(new Transition(curr, newS, "$"));
+                        transitions.add(new NKATransition(curr, newS, "$"));
                     }
                 }
 
@@ -407,7 +419,7 @@ public class GSA {
         nka.states = new HashSet<>(enka.states);
         nka.startingState = enka.startingState;
         // acceptable states
-        for (Transition t : enka.transitions) {
+        for (NKATransition t : enka.transitions) {
             if (t.start == enka.startingState && t.transSymb.equals("$")) {
                 State temp = t.end;
                 if (enka.acceptedStates.contains(temp)) {
@@ -454,8 +466,8 @@ public class GSA {
         // transition functions
         // take all transition symbols from nka
         Set<String> alphabet = new HashSet<>();
-        for (Transition t : nka.transitions) {
-            if (!t.transSymb.equals("$")) { // izuzmi epsilon
+        for (NKATransition t : nka.transitions) {
+            if (!t.transSymb.equals("$")) { // exclude epsilon
                 alphabet.add(t.transSymb);
             }
         }
@@ -465,7 +477,7 @@ public class GSA {
             for (String symb : alphabet) {
                 Set<State> newSubset = new HashSet<>();
                 for (State s : subset) {
-                    for (Transition t : nka.transitions) {
+                    for (NKATransition t : nka.transitions) {
                         if (t.start.equals(s) && t.transSymb.equals(symb)) {
                             newSubset.add(t.end);
                         }
@@ -488,7 +500,8 @@ public class GSA {
         calculateEmpty();
         generateStartsWith();
         NKA nka = constructNKA();
-        for(Transition s: nka.transitions)
-            System.out.println(s);
+        DKA dka = NKAtoDKA(nka);
+        System.out.println(dka);
+
     }
 }
