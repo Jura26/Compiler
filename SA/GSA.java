@@ -6,20 +6,20 @@ import java.util.*;
 
 public class GSA {
 
-    static class NKA{
-        HashSet<NKATransition> transitions;
+    static class NFA{
+        HashSet<NFATransition> transitions;
         HashSet<State> states;
         HashSet<State> acceptedStates;
         State startingState;
 
-        public NKA(HashSet<NKATransition> transitions, HashSet<State> states, HashSet<State> acceptedStates, State startingState){
+        public NFA(HashSet<NFATransition> transitions, HashSet<State> states, HashSet<State> acceptedStates, State startingState){
             this.transitions = transitions;
             this.states = states;
             this.acceptedStates = acceptedStates;
             this.startingState = startingState;
         }
 
-        public NKA() {
+        public NFA() {
             transitions = new HashSet<>();
             states = new HashSet<>();
             acceptedStates = new HashSet<>();
@@ -27,12 +27,12 @@ public class GSA {
         }
     }
 
-    static class NKATransition{
+    static class NFATransition{
         State start;
         State end;
         String transSymb;
 
-        public NKATransition(State start, State end, String transSymb){
+        public NFATransition(State start, State end, String transSymb){
             this.start = start;
             this.end = end;
             this.transSymb = transSymb;
@@ -44,7 +44,7 @@ public class GSA {
         }
         @Override
         public boolean equals(Object o){
-            return o instanceof NKATransition s && this.hashCode() == s.hashCode();
+            return o instanceof NFATransition s && this.hashCode() == s.hashCode();
         }
         @Override
         public int hashCode(){
@@ -52,13 +52,13 @@ public class GSA {
         }
     }
 
-    public static class DKA{
-        HashSet<DKATransition> transitions;
+    public static class DFA{
+        HashSet<DFATransition> transitions;
         HashSet<Set<State>> states;
         HashSet<Set<State>> acceptedStates;
         Set<State> startingState;
 
-        public DKA(){
+        public DFA(){
             transitions = new HashSet<>();
             states = new HashSet<>();
             acceptedStates = new HashSet<>();
@@ -66,11 +66,11 @@ public class GSA {
         }
     }
 
-    static class DKATransition{
+    static class DFATransition{
         Set<State> start;
         Set<State> end;
         String transSymb;
-        public DKATransition(Set<State> start, Set<State> end, String transSymb){
+        public DFATransition(Set<State> start, Set<State> end, String transSymb){
             this.start = start;
             this.end = end;
             this.transSymb = transSymb;
@@ -339,26 +339,17 @@ public class GSA {
         }
     }
 
-    private static NKA constructNKA(){
-        HashSet<NKATransition> transitions = new HashSet<>();
+    private static NFA constructNFA(){
+        HashSet<NFATransition> transitions = new HashSet<>();
         HashSet<State> currStates = new HashSet<>();
-        Production temp = new Production("<S'>", new ArrayList<>());
-        State startingState = new State(temp, new HashSet<>(), 0);
+        ArrayList<String> RightProduction = new  ArrayList<>();
+        RightProduction.add(unterminated.getFirst());
+        Production temp = new Production("<%>", RightProduction);
+        HashSet<String> startingT = new HashSet<>();
+        startingT.add("#");
+        State startingState = new State(temp, startingT, 0);
 
-        for(Production production : productions)
-            if(production.left.equals(unterminated.getFirst())) {
-                HashSet<String> T = new HashSet<>();
-                T.add("END");
-                State S;
-                if(production.right.getFirst().equals("$"))
-                    S = new State(production, T, 1);
-                else
-                    S = new State(production, T, 0);
-                currStates.add(S);
-
-                transitions.add(new NKATransition(startingState, S, "$"));
-            }
-
+        currStates.add(startingState);
         HashSet<State> allStates = new HashSet<>(currStates);
         allStates.add(startingState);
 
@@ -378,7 +369,7 @@ public class GSA {
                 if(allStates.add(newState))
                     currStates2.add(newState);
 
-                transitions.add(new NKATransition(curr, newState, curr.nextSymb()));
+                transitions.add(new NFATransition(curr, newState, curr.nextSymb()));
 
                 if(terminated.contains(curr.nextSymb())) continue;
 
@@ -408,7 +399,7 @@ public class GSA {
                             newS = new State(production, newT, 0);
                         if(allStates.add(newS))
                             currStates2.add(newS);
-                        transitions.add(new NKATransition(curr, newS, "$"));
+                        transitions.add(new NFATransition(curr, newS, "$"));
                     }
 
                 }
@@ -424,7 +415,7 @@ public class GSA {
                 acceptedStates.add(state);
         allStates.add(startingState);
 
-        return new NKA(transitions, allStates, acceptedStates, startingState);
+        return new NFA(transitions, allStates, acceptedStates, startingState);
     }
 
     private static boolean canBeEmpty(ArrayList<String> symbols) {
@@ -437,29 +428,28 @@ public class GSA {
         return true;
     }
 
-    private static DKA NKAtoDKA(NKA enka){
-        NKA nka = new NKA();
-        DKA dka = new DKA();
+    private static DFA NFAtoDFA(NFA enfa){
+        NFA nfa = new NFA();
+        DFA dfa = new DFA();
 
-        // eNKA -> NKA
+        // eNFA -> NFA
         // states remain the same, starting state also
-        nka.states = new HashSet<>(enka.states);
-        nka.startingState = enka.startingState;
+        nfa.states = new HashSet<>(enfa.states);
+        nfa.startingState = enfa.startingState;
         // acceptable states
-        for (NKATransition t : enka.transitions) {
-            if (t.start == enka.startingState && t.transSymb.equals("$")) {
+        for (NFATransition t : enfa.transitions) {
+            if (t.start == enfa.startingState && t.transSymb.equals("$")) {
                 State temp = t.end;
-                if (enka.acceptedStates.contains(temp)) {
-                    nka.acceptedStates.add(t.start);
+                if (enfa.acceptedStates.contains(temp)) {
+                    nfa.acceptedStates.add(t.start);
                     break;
                 }
             }
         }
-        nka.transitions = new HashSet<>(enka.transitions);
-
-        // NKA -> DKA
+        nfa.transitions = new HashSet<>(enfa.transitions);
+        // NFA -> DFA
         // all subsets of states
-        List<State> stateList = new ArrayList<>(nka.states);
+        List<State> stateList = new ArrayList<>(nfa.states);
         int n = stateList.size();
         HashSet<Set<State>> setOfSubsets = new HashSet<>();
 
@@ -474,46 +464,45 @@ public class GSA {
             setOfSubsets.add(subset);
         }
 
-        dka.states = setOfSubsets;
+        dfa.states = setOfSubsets;
 
         // acceptable states
         for (Set<State> subset : setOfSubsets) {
             for (State state : subset) {
-                if (nka.acceptedStates.contains(state)){
-                    dka.acceptedStates.add(subset);
+                if (nfa.acceptedStates.contains(state)){
+                    dfa.acceptedStates.add(subset);
                     break;
                 }
             }
         }
-
         // starting state in a set
-        dka.startingState = new HashSet<>();
-        dka.startingState.add(nka.startingState);
+        dfa.startingState = new HashSet<>();
+        dfa.startingState.add(nfa.startingState);
 
         // transition functions
-        // take all transition symbols from nka
+        // take all transition symbols from nfa
         Set<String> alphabet = new HashSet<>();
-        for (NKATransition t : nka.transitions) {
+        for (NFATransition t : nfa.transitions) {
             if (!t.transSymb.equals("$")) { // exclude epsilon
                 alphabet.add(t.transSymb);
             }
         }
 
-        // generate all new transitions for dka
+        // generate all new transitions for dfa
         for (Set<State> subset : setOfSubsets) {
             for (String symb : alphabet) {
                 Set<State> newSubset = new HashSet<>();
                 for (State s : subset) {
-                    for (NKATransition t : nka.transitions) {
+                    for (NFATransition t : nfa.transitions) {
                         if (t.start.equals(s) && t.transSymb.equals(symb)) {
                             newSubset.add(t.end);
                         }
                     }
                 }
-                dka.transitions.add(new DKATransition(subset, newSubset, symb));
+                dfa.transitions.add(new DFATransition(subset, newSubset, symb));
             }
         }
-        return dka;
+        return dfa;
     }
 
     public static void main(String[] args) {
@@ -525,8 +514,10 @@ public class GSA {
         }
         calculateEmpty();
         generateStartsWith();
-        NKA nka = constructNKA();
-        DKA dka = NKAtoDKA(nka);
+        NFA nfa = constructNFA();
+
+        DFA dfa = NFAtoDFA(nfa);
+
 
     }
 }
