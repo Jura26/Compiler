@@ -67,14 +67,22 @@ public class SA {
         ArrayList<Node> children;
 
         public Node(String symbol){
+            children = new ArrayList<>();
             this.symbol = symbol;
             this.display = symbol;
         }
         public Node(String symbol, String display){
+            children = new ArrayList<>();
             this.symbol = symbol;
             this.display = display;
         }
-
+        public boolean addChild(Node child){
+            return children.add(child);
+        }
+        @Override
+        public String toString(){
+            return display;
+        }
     }
 
     static ArrayList<HashMap<String, Action>> actionTable = new ArrayList<>();
@@ -117,9 +125,9 @@ public class SA {
                 String[] tokens = line.split(",\\s*");
                 for(int i = 0; i < terminated.size(); i++){
                     if(tokens[i].equals("null")) continue;
-                    if(tokens[i].startsWith("Pomakni")) {
-                        tokens[i] = tokens[i].substring("Pomakni".length());
-                        Action value = new Action("Pomakni", Integer.parseInt(tokens[i]));
+                    if(tokens[i].startsWith("Shift")) {
+                        tokens[i] = tokens[i].substring("Shift".length());
+                        Action value = new Action("Shift", Integer.parseInt(tokens[i]));
                         action.put(terminated.get(i), value);
                         continue;
                     }
@@ -162,12 +170,95 @@ public class SA {
         }
     }
 
+    static HashMap<Integer, Node> terminalToNode= new HashMap<>();
+    static ArrayList<String> input = new ArrayList<>();
     private static void readInput(){
+        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
 
+        String line;
+        try {
+            int i = 0;
+            while ((line = br.readLine()) != null) {
+                String [] tokens = line.split(" ");
+                Node temp = new Node(tokens[0], line);
+                terminalToNode.put(i++, temp);
+                input.add(tokens[0]);
+            }
+        }catch (IOException e) {
+            e.printStackTrace();
+        }
+        for(Map.Entry<Integer, Node> entry : terminalToNode.entrySet()){
+            System.out.print(entry.getKey());
+            System.out.print(": ");
+            System.out.println(entry.getValue());
+        }
+        input.add("#");
+    }
+
+    static Node LRparse(){
+        int pointer = 0;
+        Stack<Integer> stateStack = new Stack<>();
+        Stack<Node> nodeStack = new Stack<>();
+        stateStack.push(0);
+        while(true){
+            int currState = stateStack.peek();
+            String currSymbol = input.get(pointer);
+            if(!actionTable.get(currState).containsKey(currSymbol)){
+                Node error = terminalToNode.get(pointer);
+                String row = error.toString().split(" ")[1];
+                System.err.println("Syntax error on line " + row);
+                System.err.println("Expected input characters: ");
+                for(Map.Entry<String, Action> entry: actionTable.get(currState).entrySet()){
+                    System.err.print(entry.getKey() + " ");
+                }
+            }
+            Action currAction = actionTable.get(currState).get(currSymbol);
+            if(currAction.name.equals("Shift")){
+                currState = currAction.amount;
+                stateStack.push(currState);
+                nodeStack.push(terminalToNode.get(pointer));
+                pointer++;
+                continue;
+            }
+            if(currAction.name.equals("Reduct")){
+                Production prod = currAction.production;
+                int size = 0;
+                if(!prod.right.getFirst().equals("$"))
+                    size = prod.right.size();
+
+                Node newNode = new Node(prod.left);
+                for(int i = 0; i < size; i++){
+                    stateStack.pop();
+                    newNode.children.addFirst(nodeStack.pop());
+                }
+                nodeStack.push(newNode);
+                int nextState = newStateTable.get(stateStack.peek()).get(prod.left);
+                stateStack.push(nextState);
+                continue;
+            }
+            return nodeStack.pop();
+        }
+    }
+
+    private static void printOutput(Node node, Integer indent){
+        for(int i = 0; i < indent; i++)
+            System.out.print(" ");
+
+        System.out.println(node);
+        if(node.children.isEmpty()){
+            for(int i = 0; i < indent; i++)
+                System.out.print(" ");
+            System.out.println("$");
+        }
+        for(int i = 0; i < node.children.size(); i++)
+            printOutput(node.children.get(i), indent + 1);
     }
 
     public static void main(String[] args) throws IOException {
         loadFromFiles("Actions.txt", "NewStates.txt");
-        loadInput();
+        readInput();
+        Node root = LRparse();
+        printOutput(root, 0);
+
     }
 }
