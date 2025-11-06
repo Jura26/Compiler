@@ -112,7 +112,7 @@ public class GSA {
 
         @Override
         public String toString(){
-            return item.toString() + T + " " + pointer;
+            return "" + item.hashCode();
         }
         @Override
         public boolean equals(Object o){
@@ -143,7 +143,7 @@ public class GSA {
 
         @Override
         public boolean equals(Object o){
-            return o instanceof State s && hashCode() == s.hashCode();
+            return o instanceof Production s && hashCode() == s.hashCode();
         }
 
         @Override
@@ -515,8 +515,7 @@ public class GSA {
         calculateEmpty();
         generateStartsWith();
         NFA nfa = constructNFA();
-
-        DFA dfa = NFAtoDFA(nfa);
+        System.out.println("NFA: " + nfa.transitions);
 
 
     }

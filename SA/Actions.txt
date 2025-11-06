@@ -1,0 +1,10 @@
+%V <%> <A> <B>
+%T a b #
+%Syn b
+Pomakni3, Pomakni4, Reduct(<A>->$),
+null, null, Accept,
+Pomakni3, Pomakni4, Reduct(<A>->$),
+Pomakni3, Pomakni4, null,
+Reduct(<B>->b), Reduct(<B>->b), Reduct(<B>->b),
+null, null, Reduct(<A>-><B> <A>),
+Reduct(<B>->a <B>), Reduct(<B>->a <B>), Reduct(<B>->a <B>),
