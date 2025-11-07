@@ -1,7 +1,5 @@
 package SA;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.util.*;
 
 public class GSA {
@@ -124,31 +122,84 @@ public class GSA {
         }
     }
 
-    static class Production{
-        // Left side of production
-        String left;
-        // Right side of production
-        ArrayList<String> right;
+//    static class Production{
+//        // Left side of Production
+//        String left;
+//        // Right side of Production
+//        ArrayList<String> right;
+//
+//        // Constructor
+//        Production(String left, ArrayList<String> right){
+//            this.left = left;
+//            this.right = right;
+//        }
+//
+//        @Override
+//        public String toString(){
+//            return left + " -> " + right;
+//        }
+//
+//        @Override
+//        public boolean equals(Object o){
+//            return o instanceof State s && hashCode() == s.hashCode();
+//        }
+//
+//        @Override
+//        public int hashCode(){
+//            return Objects.hash(left, right);
+//        }
+//    }
+public static class Production{
+    String left;
+    ArrayList<String> right;
 
-        // Constructor
-        Production(String left, ArrayList<String> right){
-            this.left = left;
-            this.right = right;
+    // Constructor
+    Production(String left, ArrayList<String> right){
+        this.left = left;
+        this.right = right;
+    }
+
+    @Override
+    public String toString() {
+        return left + " ::= " + String.join(" ", right);
+    }
+
+    @Override
+    public boolean equals(Object o){
+        return o instanceof GSA.Production s && hashCode() == s.hashCode();
+    }
+
+    @Override
+    public int hashCode(){
+        return Objects.hash(left, right);
+    }
+}
+
+    public static class Action{
+        String name;
+        int amount;
+        GSA.Production production;
+
+        public Action(String name){
+            this.name = name;
         }
 
+        public Action(String name, int amount){
+            this.name = name;
+            this.amount = amount;
+        }
+
+        public Action(String name, GSA.Production production){
+            this.name = name;
+            this.production = production;
+            this.amount = -1;
+        }
         @Override
         public String toString(){
-            return left + " -> " + right;
-        }
-
-        @Override
-        public boolean equals(Object o){
-            return o instanceof State s && hashCode() == s.hashCode();
-        }
-
-        @Override
-        public int hashCode(){
-            return Objects.hash(left, right);
+            if(amount != -1)
+                return name + " " + amount;
+            else
+                return name + " " + production.toString();
         }
     }
 
@@ -191,13 +242,13 @@ public class GSA {
 
             // All productions
             if(!line.startsWith(" ")) {
-                // Left side of production
+                // Left side of Production
                 temp = new Production(line, new ArrayList<>());
                 productions.add(temp);
             } else {
-                // Right side of production
+                // Right side of Production
                 if(!productions.getLast().right.isEmpty()){
-                    // If it is not the first row it should construct next production instead of concatenating with |
+                    // If it is not the first row it should construct next Production instead of concatenating with |
                     temp = new Production(productions.getLast().left, new ArrayList<>());
                     productions.add(temp);
                 }
@@ -607,22 +658,22 @@ public class GSA {
         }
 
         // pick a state to represent every equivalent pair
-        Set<Set<State>> minStates = new HashSet<>();
-        for (Set<Set<State>> group : groups) {
-            if (!group.isEmpty()) {
-                List<Set<State>> sortedGroup = new ArrayList<>(group);
-                sortedGroup.sort(Comparator.comparing(Set::toString));
-                Set<State> representative = sortedGroup.get(0);
-                minStates.add(representative);
-
-                for (DFATransition t : dka.transitions) {
-                    if (group.contains(t.start)) t.start = representative;
-                    if (group.contains(t.end)) t.end = representative;
-                }
-
-                if (group.contains(dka.startingState)) dka.startingState = representative;
-            }
-        }
+//        Set<Set<State>> minStates = new HashSet<>();
+//        for (Set<Set<State>> group : groups) {
+//            if (!group.isEmpty()) {
+//                List<Set<State>> sortedGroup = new ArrayList<>(group);
+//                sortedGroup.sort(Comparator.comparing(Set::toString));
+//                Set<State> representative = sortedGroup.get(0);
+//                minStates.add(representative);
+//
+//                for (DFATransition t : dka.transitions) {
+//                    if (group.contains(t.start)) t.start = representative;
+//                    if (group.contains(t.end)) t.end = representative;
+//                }
+//
+//                if (group.contains(dka.startingState)) dka.startingState = representative;
+//            }
+//        }
 
 //        // keep only minimal states
 //        dka.states.retainAll(minStates);
@@ -634,6 +685,123 @@ public class GSA {
 
     private static void createTables(DFA dfa){
 
+        //put states in a list for indexing
+        List<Set<State>> allStates = new ArrayList<>(dfa.states);
+
+        // every map is a row of the table, list is the whole table
+        ArrayList<HashMap<String, Action>> actionTable = new ArrayList<>();
+        ArrayList<HashMap<String, Integer>> newStateTable = new ArrayList<>();
+
+        // empty row for every state
+        for (int i = 0; i < allStates.size(); i++) {
+            actionTable.add(new HashMap<>());
+            newStateTable.add(new HashMap<>());
+        }
+
+        for (DFATransition t : dfa.transitions) {
+            int from = getStateIndex(allStates, t.start);
+            int to = getStateIndex(allStates, t.end);
+
+            // if the transition is through a terminated, Action table
+            if (terminated.contains(t.transSymb)){
+                actionTable.get(from).put(t.transSymb, new Action("Pomakni", to));
+            }
+
+            // if the trasition is thrpugh unterminated, New State table
+            else if (unterminated.contains(t.transSymb)){
+                newStateTable.get(from).put(t.transSymb, to);
+            }
+        }
+
+        for (Set<State> state: allStates){
+            if (dfa.acceptedStates.contains(state)) {
+                for (State s : state) {
+                    if (s.pointer == s.item.right.size()) {
+                        // REDUCE or ACCEPT
+                        for (String lookahead : s.T) {
+                            if (s.item.left.equals("<%>")) {
+                                actionTable.get(getStateIndex(allStates, state)).put(lookahead, new Action("Accept"));
+                            } else {
+                                actionTable.get(getStateIndex(allStates, state)).put(lookahead, new Action("Reduct", s.item));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        System.out.println(actionTable);
+        System.out.println(newStateTable);
+
+        if (!terminated.contains("#"))
+            terminated.add("#");
+        if (!unterminated.contains("<%>"))
+            unterminated.addFirst("<%>");
+
+        // print to files
+        try (PrintWriter actionsOut = new PrintWriter("Actions2.txt");
+             PrintWriter newStatesOut = new PrintWriter("NewStates2.txt")) {
+
+            // --- Zapis zaglavlja ---
+            actionsOut.print("%V");
+            for (String nt : unterminated) actionsOut.print(" " + nt);
+            actionsOut.println();
+
+            actionsOut.print("%T");
+            for (String t : terminated) actionsOut.print(" " + t);
+            actionsOut.println();
+
+            actionsOut.print("%Syn");
+            for (String s : syncSymb) actionsOut.print(" " + s);
+            actionsOut.println();
+
+            // --- Zapis action tablice ---
+            for (HashMap<String, Action> row : actionTable) {
+                List<String> rowEntries = new ArrayList<>();
+                for (String term : terminated) {
+                    Action act = row.get(term);
+                    if (act == null) {
+                        rowEntries.add("null");
+                    } else if (act.name.equals("Pomakni")) {
+                        rowEntries.add("Pomakni" + act.amount);
+                    } else if (act.name.equals("Reduct")) {
+                        rowEntries.add("Reduct(" + act.production.left + "->" +
+                                String.join(" ", act.production.right) + ")");
+                    } else if (act.name.equals("Accept")) {
+                        rowEntries.add("Accept");
+                    } else {
+                        rowEntries.add("null");
+                    }
+                }
+                actionsOut.println(String.join(", ", rowEntries) + ",");
+            }
+
+            // --- Zapis newState tablice ---
+            for (HashMap<String, Integer> row : newStateTable) {
+                List<String> rowEntries = new ArrayList<>();
+                for (String nt : unterminated) {
+                    Integer next = row.get(nt);
+                    if (next == null) {
+                        rowEntries.add("null");
+                    } else {
+                        rowEntries.add("Stavi" + next);
+                    }
+                }
+                newStatesOut.println(String.join(", ", rowEntries) + ",");
+            }
+        } catch (FileNotFoundException e) {
+            throw new RuntimeException(e);
+        }
+
+    }
+
+    private static int getStateIndex(List<Set<State>> allStates, Set<State> target) {
+        for (int i = 0; i < allStates.size(); i++) {
+            if (allStates.get(i).equals(target)) {
+                return i;
+            }
+        }
+        throw new RuntimeException("Stanje nije pronađeno: " + target);
     }
 
     public static void main(String[] args) {
@@ -648,6 +816,6 @@ public class GSA {
         NFA nfa = constructNFA();
         DFA dfa = NFAtoDFA(nfa);
         DFA dfaMin = minimizeDFA(dfa);
-
+        createTables(dfaMin);
     }
 }
