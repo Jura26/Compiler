@@ -1,7 +1,0 @@
-null, Stavi1, Stavi2,
-null, null, null,
-null, Stavi5, Stavi2,
-null, null, Stavi6,
-null, null, null,
-null, null, null,
-null, null, null,

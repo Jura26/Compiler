@@ -704,7 +704,7 @@ public static class Production{
 
             // if the transition is through a terminated, Action table
             if (terminated.contains(t.transSymb)){
-                actionTable.get(from).put(t.transSymb, new Action("Pomakni", to));
+                actionTable.get(from).put(t.transSymb, new Action("Shift", to));
             }
 
             // if the trasition is thrpugh unterminated, New State table
@@ -714,6 +714,8 @@ public static class Production{
         }
 
         for (Set<State> state: allStates){
+            if(state.equals(dfa.startingState))
+                actionTable.get(getStateIndex(allStates, state)).put("<%>", new Action("Starting"));
             if (dfa.acceptedStates.contains(state)) {
                 for (State s : state) {
                     if (s.pointer == s.item.right.size()) {
@@ -730,18 +732,14 @@ public static class Production{
             }
         }
 
-        System.out.println(actionTable);
-        System.out.println(newStateTable);
-
         if (!terminated.contains("#"))
             terminated.add("#");
         if (!unterminated.contains("<%>"))
             unterminated.addFirst("<%>");
 
         // print to files
-        try (PrintWriter actionsOut = new PrintWriter("Actions2.txt");
-             PrintWriter newStatesOut = new PrintWriter("NewStates2.txt")) {
-
+        try (PrintWriter actionsOut = new PrintWriter("./analizator/Actions.txt");
+             PrintWriter newStatesOut = new PrintWriter("./analizator/NewStates.txt")) {
             // --- Zapis zaglavlja ---
             actionsOut.print("%V");
             for (String nt : unterminated) actionsOut.print(" " + nt);
@@ -755,15 +753,20 @@ public static class Production{
             for (String s : syncSymb) actionsOut.print(" " + s);
             actionsOut.println();
 
+            int idx = -1;
+            int i = 0;
             // --- Zapis action tablice ---
             for (HashMap<String, Action> row : actionTable) {
                 List<String> rowEntries = new ArrayList<>();
+                if(row.containsKey("<%>"))
+                    idx = i;
+                i++;
                 for (String term : terminated) {
                     Action act = row.get(term);
                     if (act == null) {
                         rowEntries.add("null");
-                    } else if (act.name.equals("Pomakni")) {
-                        rowEntries.add("Pomakni" + act.amount);
+                    } else if (act.name.equals("Shift")) {
+                        rowEntries.add("Shift" + act.amount);
                     } else if (act.name.equals("Reduct")) {
                         rowEntries.add("Reduct(" + act.production.left + "->" +
                                 String.join(" ", act.production.right) + ")");
@@ -773,8 +776,10 @@ public static class Production{
                         rowEntries.add("null");
                     }
                 }
+
                 actionsOut.println(String.join(", ", rowEntries) + ",");
             }
+            actionsOut.println("%Start" + idx);
 
             // --- Zapis newState tablice ---
             for (HashMap<String, Integer> row : newStateTable) {
@@ -784,7 +789,7 @@ public static class Production{
                     if (next == null) {
                         rowEntries.add("null");
                     } else {
-                        rowEntries.add("Stavi" + next);
+                        rowEntries.add("Put" + next);
                     }
                 }
                 newStatesOut.println(String.join(", ", rowEntries) + ",");
