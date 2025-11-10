@@ -745,5 +745,6 @@ public class GSA {
         NFA nfa = constructNFA();
         DFA dfa = NFAtoDFA(nfa);
         createTables(dfa);
+
     }
 }
