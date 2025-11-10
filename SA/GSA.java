@@ -404,6 +404,15 @@ public static class Production{
         HashSet<State> allStates = new HashSet<>(currStates);
         allStates.add(startingState);
 
+        // Pre-compute map of productions by left side for faster lookup
+        Map<String, List<Production>> productionsByLeft = new HashMap<>();
+        for(Production production : productions) {
+            productionsByLeft.computeIfAbsent(production.left, k -> new ArrayList<>()).add(production);
+        }
+
+        // Pre-compute terminated set as HashSet for O(1) lookups
+        HashSet<String> terminatedSet = new HashSet<>(terminated);
+
         boolean finished;
         do {
 
@@ -422,10 +431,12 @@ public static class Production{
 
                 transitions.add(new NFATransition(curr, newState, curr.nextSymb()));
 
-                if(terminated.contains(curr.nextSymb())) continue;
+                if(terminatedSet.contains(curr.nextSymb())) continue;
 
-                for(Production production : productions){
-                    if(production.left.equals(curr.nextSymb())) {
+                // Use pre-computed production map instead of iterating all productions
+                List<Production> relevantProductions = productionsByLeft.get(curr.nextSymb());
+                if(relevantProductions != null) {
+                    for(Production production : relevantProductions) {
                         // Calculate FIRST(suffix + curr.T)
                         HashSet<String> newT = new HashSet<>();
 
@@ -485,34 +496,43 @@ public static class Production{
         // starting state -> get epsilon closure
         Set<State> startSet = new HashSet<>();
         startSet.add(nka.startingState);
-        startSet = epsilonClosure(startSet, nka);
+
+        // Build epsilon transition map once
+        Map<State, Set<State>> epsilonTransitions = new HashMap<>();
+        for (NFATransition t : nka.transitions) {
+            if (t.transSymb.equals("$")) {
+                epsilonTransitions.computeIfAbsent(t.start, k -> new HashSet<>()).add(t.end);
+            }
+        }
+
+        startSet = epsilonClosureOptimized(startSet, epsilonTransitions);
 
         dka.startingState = startSet;
 
-        Map<Set<State>, Set<State>> canonicalSets = new HashMap<>();
+        // Use IdentityHashMap for faster lookups with Set<State> keys
+        Map<Integer, Set<State>> canonicalSets = new HashMap<>();
         HashSet<Set<State>> dkaStates = new HashSet<>();
         Queue<Set<State>> queue = new LinkedList<>();
 
-        Set<State> canonicalStart = getCanonical(canonicalSets, startSet);
-        dkaStates.add(canonicalStart);
-        queue.add(canonicalStart);
+        int startHash = computeSetHash(startSet);
+        canonicalSets.put(startHash, startSet);
+        dkaStates.add(startSet);
+        queue.add(startSet);
 
         // get all transition symbols
         Set<String> alphabet = new HashSet<>();
-        for (NFATransition t : nka.transitions) {
-            if (!t.transSymb.equals("$")) alphabet.add(t.transSymb);
-        }
-
         Map<State, Map<String, Set<State>>> outgoing = new HashMap<>();
         for (NFATransition t : nka.transitions) {
             if (!t.transSymb.equals("$")) {
+                alphabet.add(t.transSymb);
                 outgoing.computeIfAbsent(t.start, k -> new HashMap<>())
                         .computeIfAbsent(t.transSymb, k -> new HashSet<>())
                         .add(t.end);
             }
         }
 
-        Map<Set<State>, Set<State>> epsilonCache = new HashMap<>();
+        // Cache epsilon closures using hash codes
+        Map<Integer, Set<State>> epsilonCache = new HashMap<>();
 
         while (!queue.isEmpty()) {
             Set<State> current = queue.poll();
@@ -520,26 +540,61 @@ public static class Production{
             for (String symb : alphabet) {
                 Set<State> newSet = new HashSet<>();
                 for (State s : current) {
-                    newSet.addAll(outgoing.getOrDefault(s, Collections.emptyMap())
-                            .getOrDefault(symb, Collections.emptySet()));
+                    Map<String, Set<State>> stateTransitions = outgoing.get(s);
+                    if (stateTransitions != null) {
+                        Set<State> targets = stateTransitions.get(symb);
+                        if (targets != null) {
+                            newSet.addAll(targets);
+                        }
+                    }
                 }
-
-                // memorirani epsilon closure
-                newSet = epsilonCache.computeIfAbsent(newSet, k -> epsilonClosure(k, nka));
 
                 if (newSet.isEmpty()) continue;
 
-                Set<State> canonicalNew = canonicalSets.computeIfAbsent(newSet, k -> k);
-                if (!dkaStates.contains(canonicalNew)) {
-                    dkaStates.add(canonicalNew);
-                    queue.add(canonicalNew);
+                // Get epsilon closure with caching
+                int newSetHash = computeSetHash(newSet);
+                Set<State> closureSet = epsilonCache.get(newSetHash);
+                if (closureSet == null) {
+                    closureSet = epsilonClosureOptimized(newSet, epsilonTransitions);
+                    epsilonCache.put(computeSetHash(closureSet), closureSet);
+                } else {
+                    // Verify it's actually the same set (hash collision check)
+                    if (!newSet.equals(closureSet)) {
+                        closureSet = epsilonClosureOptimized(newSet, epsilonTransitions);
+                    }
                 }
 
-                dka.transitions.add(new DFATransition(canonicalSets.get(current), canonicalNew, symb));
+                int closureHash = computeSetHash(closureSet);
+                Set<State> canonicalNew = canonicalSets.get(closureHash);
+
+                if (canonicalNew == null) {
+                    canonicalSets.put(closureHash, closureSet);
+                    canonicalNew = closureSet;
+                    dkaStates.add(canonicalNew);
+                    queue.add(canonicalNew);
+                } else if (!closureSet.equals(canonicalNew)) {
+                    // Hash collision - need to find the right canonical set
+                    boolean found = false;
+                    for (Set<State> existing : dkaStates) {
+                        if (existing.equals(closureSet)) {
+                            canonicalNew = existing;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        canonicalNew = closureSet;
+                        dkaStates.add(canonicalNew);
+                        queue.add(canonicalNew);
+                    }
+                }
+
+                dka.transitions.add(new DFATransition(current, canonicalNew, symb));
             }
         }
 
         dka.states = dkaStates;
+        // Optimize accepted states computation
         for (Set<State> sSet : dkaStates) {
             for (State s : sSet) {
                 if (nka.acceptedStates.contains(s)) {
@@ -552,135 +607,33 @@ public static class Production{
         return dka;
     }
 
-
-    private static Set<State> epsilonClosure(Set<State> states, NFA nka) {
+    // Optimized epsilon closure that reuses epsilon transition map
+    private static Set<State> epsilonClosureOptimized(Set<State> states, Map<State, Set<State>> epsilonTransitions) {
         Set<State> closure = new HashSet<>(states);
         Stack<State> stack = new Stack<>();
         stack.addAll(states);
 
         while (!stack.isEmpty()) {
             State s = stack.pop();
-            for (NFATransition t : nka.transitions) {
-                if (t.start.equals(s) && t.transSymb.equals("$") && !closure.contains(t.end)) {
-                    closure.add(t.end);
-                    stack.push(t.end);
+            Set<State> targets = epsilonTransitions.get(s);
+            if (targets != null) {
+                for (State t : targets) {
+                    if (closure.add(t)) {
+                        stack.push(t);
+                    }
                 }
             }
         }
         return closure;
     }
 
-    // helper function to get item from set if it already exists
-    private static Set<State> getCanonical(Map<Set<State>, Set<State>> map, Set<State> subset) {
-        for (Set<State> s : map.keySet()) {
-            if (s.equals(subset)) return map.get(s);
+    // Compute a hash for a set of states
+    private static int computeSetHash(Set<State> states) {
+        int hash = 0;
+        for (State s : states) {
+            hash ^= s.hashCode();
         }
-        map.put(subset, subset);
-        return subset;
-    }
-
-    private static DFA minimizeDFA(DFA dka) {
-
-        // find reachable states
-        Set<Set<State>> reachableStates = new HashSet<>();
-        reachableStates.add(dka.startingState);
-
-        boolean added = true;
-        while (added) {
-            added = false;
-            Set<Set<State>> temp = new HashSet<>(reachableStates);
-            for (Set<State> stateSet : temp) {
-                for (DFATransition t : dka.transitions) {
-                    if (t.start.equals(stateSet) && !reachableStates.contains(t.end)) {
-                        reachableStates.add(t.end);
-                        added = true;
-                    }
-                }
-            }
-        }
-
-        // keep only reachable states
-        dka.states.retainAll(reachableStates);
-        dka.acceptedStates.retainAll(reachableStates);
-        dka.transitions.removeIf(t -> !reachableStates.contains(t.start) || !reachableStates.contains(t.end));
-
-        // initial grouping of states
-        Set<Set<State>> nonAccepted = new HashSet<>(dka.states);
-        nonAccepted.removeAll(dka.acceptedStates);
-
-        Set<Set<Set<State>>> groups = new HashSet<>();
-        if (!dka.acceptedStates.isEmpty()) groups.add(new HashSet<>(dka.acceptedStates));
-        if (!nonAccepted.isEmpty()) groups.add(nonAccepted);
-
-        // minimization through iterations
-        // get all transition symbols
-        Set<String> alphabet = new HashSet<>();
-        for (DFATransition t : dka.transitions) {
-            if (!t.transSymb.equals("$")) alphabet.add(t.transSymb);
-        }
-        boolean changed = true;
-
-        while (changed) {
-            changed = false;
-            Set<Set<Set<State>>> newGroups = new HashSet<>(groups);
-
-            for (Set<Set<State>> group : groups) {
-                Map<Map<String, Set<Set<State>>>, Set<Set<State>>> partitionMap = new HashMap<>();
-
-                for (Set<State> state : group) {
-                    Map<String, Set<Set<State>>> signature = new HashMap<>();
-                    for (String symbol : alphabet) {
-                        Set<Set<State>> targetGroup = null;
-                        for (DFATransition t : dka.transitions) {
-                            if (t.start.equals(state) && t.transSymb.equals(symbol)) {
-                                for (Set<Set<State>> g : groups) {
-                                    if (g.contains(t.end)) {
-                                        targetGroup = g;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        signature.put(symbol, targetGroup);
-                    }
-                    partitionMap.computeIfAbsent(signature, k -> new HashSet<>()).add(state);
-                }
-
-                if (partitionMap.size() > 1) {
-                    newGroups.remove(group);
-                    newGroups.addAll(partitionMap.values());
-                    changed = true;
-                    break;
-                }
-            }
-
-            groups = newGroups;
-        }
-
-        // pick a state to represent every equivalent pair
-//        Set<Set<State>> minStates = new HashSet<>();
-//        for (Set<Set<State>> group : groups) {
-//            if (!group.isEmpty()) {
-//                List<Set<State>> sortedGroup = new ArrayList<>(group);
-//                sortedGroup.sort(Comparator.comparing(Set::toString));
-//                Set<State> representative = sortedGroup.get(0);
-//                minStates.add(representative);
-//
-//                for (DFATransition t : dka.transitions) {
-//                    if (group.contains(t.start)) t.start = representative;
-//                    if (group.contains(t.end)) t.end = representative;
-//                }
-//
-//                if (group.contains(dka.startingState)) dka.startingState = representative;
-//            }
-//        }
-
-//        // keep only minimal states
-//        dka.states.retainAll(minStates);
-//        dka.acceptedStates.retainAll(minStates);
-//        dka.transitions.removeIf(t -> !minStates.contains(t.start) || !minStates.contains(t.end));
-
-        return dka;
+        return hash;
     }
 
     private static void createTables(DFA dfa){
@@ -820,7 +773,6 @@ public static class Production{
         generateStartsWith();
         NFA nfa = constructNFA();
         DFA dfa = NFAtoDFA(nfa);
-        DFA dfaMin = minimizeDFA(dfa);
-        createTables(dfaMin);
+        createTables(dfa);
     }
 }
