@@ -40,7 +40,7 @@ public class SA {
         Production production;
 
         public Action(String name){
-            this.name = name;
+        this.name = name;
         }
 
         public Action(String name, int amount){
@@ -122,35 +122,34 @@ public class SA {
                     continue;
                 }
 
-                if (line.startsWith("%Start")) {
-                    startingState = Integer.parseInt(line.substring("%Start".length()).trim());
-                    continue;
-                }
+                if (line.startsWith("%Start"))
+                    startingState = Integer.parseInt(line.substring("Start ".length()));
+                else {
+                    HashMap<String, Action> action = new HashMap<>();
+                    String[] tokens = line.split(",\\s*");
+                    for (int i = 0; i < terminated.size(); i++) {
+                        if (tokens[i].equals("null")) continue;
+                        if (tokens[i].startsWith("Shift")) {
+                            tokens[i] = tokens[i].substring("Shift".length());
+                            Action value = new Action("Shift", Integer.parseInt(tokens[i]));
+                            action.put(terminated.get(i), value);
+                            continue;
+                        }
+                        if (tokens[i].startsWith("Reduct")) {
+                            tokens[i] = tokens[i].substring("Reduct(".length(), tokens[i].length() - 1);
+                            String left = tokens[i].split("->")[0];
+                            String right = tokens[i].split("->")[1];
 
-                HashMap<String, Action> action = new HashMap<>();
-                String[] tokens = line.split(",\\s*");
-                for(int i = 0; i < terminated.size(); i++){
-                    if(tokens[i].equals("null")) continue;
-                    if(tokens[i].startsWith("Shift")) {
-                        tokens[i] = tokens[i].substring("Shift".length());
-                        Action value = new Action("Shift", Integer.parseInt(tokens[i]));
-                        action.put(terminated.get(i), value);
-                        continue;
+                            ArrayList<String> rightStates = new ArrayList<>(Arrays.asList(right.split(" ")));
+                            Production production = new Production(left, rightStates);
+                            Action value = new Action("Reduct", production);
+                            action.put(terminated.get(i), value);
+                        }
+                        if (tokens[i].startsWith("Accept"))
+                            action.put(terminated.get(i), new Action("Accept"));
                     }
-                    if(tokens[i].startsWith("Reduct")) {
-                        tokens[i] = tokens[i].substring("Reduct(".length(),  tokens[i].length() - 1);
-                        String left = tokens[i].split("->")[0];
-                        String right = tokens[i].split("->")[1];
-
-                        ArrayList<String> rightStates = new ArrayList<>(Arrays.asList(right.split(" ")));
-                        Production production = new Production(left, rightStates);
-                        Action value = new Action("Reduct", production);
-                        action.put(terminated.get(i), value);
-                    }
-                    if(tokens[i].startsWith("Accept"))
-                        action.put(terminated.get(i), new Action("Accept"));
+                    actionTable.add(action);
                 }
-                actionTable.add(action);
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -175,6 +174,7 @@ public class SA {
             e.printStackTrace();
         }
     }
+
 
     static HashMap<Integer, Node> terminalToNode= new HashMap<>();
     static ArrayList<String> input = new ArrayList<>();
@@ -202,6 +202,10 @@ public class SA {
         Stack<Node> nodeStack = new Stack<>();
         stateStack.push(startingState);
         while(true){
+            if(pointer == input.size()){
+                System.err.println("Input not parsed");
+                return null;
+            }
             int currState = stateStack.peek();
             String currSymbol = input.get(pointer);
             if(!actionTable.get(currState).containsKey(currSymbol)){
@@ -209,14 +213,14 @@ public class SA {
                 String row = error.toString().split(" ")[1];
                 System.err.println("Syntax error on line " + row);
                 System.err.println("Expected input characters: ");
-                for(Map.Entry<String, Action> entry: actionTable.get(currState).entrySet()){
+                for(Map.Entry<String, Action> entry: actionTable.get(currState).entrySet())
                     System.err.print(entry.getKey() + " ");
-                }
-                Node currNode = null;
-                while(!stateStack.isEmpty() && !actionTable.get(currState = stateStack.pop()).containsKey(currSymbol))
-                    currNode = nodeStack.pop();
-                if(stateStack.isEmpty() && !actionTable.get(currState).containsKey(currSymbol)){
-                    return currNode;
+                System.err.println("Read uniform character: " +  terminalToNode.get(pointer).toString());
+                while(!stateStack.isEmpty() && !nodeStack.isEmpty() && !actionTable.get(currState).containsKey(currSymbol = nodeStack.pop().symbol))
+                    currState = stateStack.pop();
+                if(!actionTable.get(currState).containsKey(currSymbol)){
+                    System.err.println("Input not parsed");
+                    return null;
                 }
             }
             Action currAction = actionTable.get(currState).get(currSymbol);
@@ -266,5 +270,6 @@ public class SA {
         readInput();
         Node root = LRparse();
         printOutput(root, 0);
+
     }
 }
