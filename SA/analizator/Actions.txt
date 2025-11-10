@@ -1,0 +1,11 @@
+%V <%> <A> <B>
+%T a b #
+%Syn b
+Reduct(<B>->a <B>), Reduct(<B>->a <B>), Reduct(<B>->a <B>),
+null, null, Accept,
+null, null, Reduct(<A>-><B> <A>),
+Shift3, Shift6, null,
+Shift3, Shift6, Reduct(<A>->$),
+Shift3, Shift6, Reduct(<A>->$),
+Reduct(<B>->b), Reduct(<B>->b), Reduct(<B>->b),
+%Start4

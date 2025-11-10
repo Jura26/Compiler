@@ -122,7 +122,7 @@ public class GSA {
         }
     }
 
-//    static class Production{
+    //    static class Production{
 //        // Left side of Production
 //        String left;
 //        // Right side of Production
@@ -149,31 +149,31 @@ public class GSA {
 //            return Objects.hash(left, right);
 //        }
 //    }
-public static class Production{
-    String left;
-    ArrayList<String> right;
+    public static class Production{
+        String left;
+        ArrayList<String> right;
 
-    // Constructor
-    Production(String left, ArrayList<String> right){
-        this.left = left;
-        this.right = right;
-    }
+        // Constructor
+        Production(String left, ArrayList<String> right){
+            this.left = left;
+            this.right = right;
+        }
 
-    @Override
-    public String toString() {
-        return left + " ::= " + String.join(" ", right);
-    }
+        @Override
+        public String toString() {
+            return left + " ::= " + String.join(" ", right);
+        }
 
-    @Override
-    public boolean equals(Object o){
-        return o instanceof GSA.Production s && hashCode() == s.hashCode();
-    }
+        @Override
+        public boolean equals(Object o){
+            return o instanceof GSA.Production s && hashCode() == s.hashCode();
+        }
 
-    @Override
-    public int hashCode(){
-        return Objects.hash(left, right);
+        @Override
+        public int hashCode(){
+            return Objects.hash(left, right);
+        }
     }
-}
 
     public static class Action{
         String name;
@@ -579,110 +579,6 @@ public static class Production{
         return subset;
     }
 
-    private static DFA minimizeDFA(DFA dka) {
-
-        // find reachable states
-        Set<Set<State>> reachableStates = new HashSet<>();
-        reachableStates.add(dka.startingState);
-
-        boolean added = true;
-        while (added) {
-            added = false;
-            Set<Set<State>> temp = new HashSet<>(reachableStates);
-            for (Set<State> stateSet : temp) {
-                for (DFATransition t : dka.transitions) {
-                    if (t.start.equals(stateSet) && !reachableStates.contains(t.end)) {
-                        reachableStates.add(t.end);
-                        added = true;
-                    }
-                }
-            }
-        }
-
-        // keep only reachable states
-        dka.states.retainAll(reachableStates);
-        dka.acceptedStates.retainAll(reachableStates);
-        dka.transitions.removeIf(t -> !reachableStates.contains(t.start) || !reachableStates.contains(t.end));
-
-        // initial grouping of states
-        Set<Set<State>> nonAccepted = new HashSet<>(dka.states);
-        nonAccepted.removeAll(dka.acceptedStates);
-
-        Set<Set<Set<State>>> groups = new HashSet<>();
-        if (!dka.acceptedStates.isEmpty()) groups.add(new HashSet<>(dka.acceptedStates));
-        if (!nonAccepted.isEmpty()) groups.add(nonAccepted);
-
-        // minimization through iterations
-        // get all transition symbols
-        Set<String> alphabet = new HashSet<>();
-        for (DFATransition t : dka.transitions) {
-            if (!t.transSymb.equals("$")) alphabet.add(t.transSymb);
-        }
-        boolean changed = true;
-
-        while (changed) {
-            changed = false;
-            Set<Set<Set<State>>> newGroups = new HashSet<>(groups);
-
-            for (Set<Set<State>> group : groups) {
-                Map<Map<String, Set<Set<State>>>, Set<Set<State>>> partitionMap = new HashMap<>();
-
-                for (Set<State> state : group) {
-                    Map<String, Set<Set<State>>> signature = new HashMap<>();
-                    for (String symbol : alphabet) {
-                        Set<Set<State>> targetGroup = null;
-                        for (DFATransition t : dka.transitions) {
-                            if (t.start.equals(state) && t.transSymb.equals(symbol)) {
-                                for (Set<Set<State>> g : groups) {
-                                    if (g.contains(t.end)) {
-                                        targetGroup = g;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        signature.put(symbol, targetGroup);
-                    }
-                    partitionMap.computeIfAbsent(signature, k -> new HashSet<>()).add(state);
-                }
-
-                if (partitionMap.size() > 1) {
-                    newGroups.remove(group);
-                    newGroups.addAll(partitionMap.values());
-                    changed = true;
-                    break;
-                }
-            }
-
-            groups = newGroups;
-        }
-
-        // pick a state to represent every equivalent pair
-//        Set<Set<State>> minStates = new HashSet<>();
-//        for (Set<Set<State>> group : groups) {
-//            if (!group.isEmpty()) {
-//                List<Set<State>> sortedGroup = new ArrayList<>(group);
-//                sortedGroup.sort(Comparator.comparing(Set::toString));
-//                Set<State> representative = sortedGroup.get(0);
-//                minStates.add(representative);
-//
-//                for (DFATransition t : dka.transitions) {
-//                    if (group.contains(t.start)) t.start = representative;
-//                    if (group.contains(t.end)) t.end = representative;
-//                }
-//
-//                if (group.contains(dka.startingState)) dka.startingState = representative;
-//            }
-//        }
-
-//        // keep only minimal states
-//        dka.states.retainAll(minStates);
-//        dka.acceptedStates.retainAll(minStates);
-//        dka.transitions.removeIf(t -> !minStates.contains(t.start) || !minStates.contains(t.end));
-
-        return dka;
-    }
-
     private static void createTables(DFA dfa){
 
         //put states in a list for indexing
@@ -820,7 +716,6 @@ public static class Production{
         generateStartsWith();
         NFA nfa = constructNFA();
         DFA dfa = NFAtoDFA(nfa);
-        DFA dfaMin = minimizeDFA(dfa);
-        createTables(dfaMin);
+        createTables(dfa);
     }
 }
