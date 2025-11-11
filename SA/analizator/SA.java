@@ -236,7 +236,7 @@ public class SA {
             if(currAction.name.equals("Reduct")){
                 Production prod = currAction.production;
                 int size = 0;
-                if(!prod.right.getFirst().equals("$"))
+                if(!prod.right.get(0).equals("$"))
                     size = prod.right.size();
 
                 Node newNode = new Node(prod.left);

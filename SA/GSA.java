@@ -251,7 +251,7 @@ public class GSA {
 
         // Fill DirectlyStartsWith
         for (Production prod : productions) {
-            if(prod.right.getFirst().equals("$")) continue;
+            if(prod.right.get(0).equals("$")) continue;
 
             int i = unterminated.indexOf(prod.left);
 
@@ -313,7 +313,7 @@ public class GSA {
         startsWithCache.put(temp, new HashSet<>());
 
         for(Production prod : productions){
-            if(prod.right.isEmpty() || prod.right.getFirst().equals("$")) continue;
+            if(prod.right.isEmpty() || prod.right.get(0).equals("$")) continue;
 
             for(int i = 0; i < prod.right.size(); i++){
                 ArrayList<String> key = new ArrayList<>();
@@ -348,7 +348,7 @@ public class GSA {
     private static void calculateEmpty(){
         empty = new HashSet<>();
         for (Production production : productions)
-            if (production.right.getFirst().equals("$"))
+            if (production.right.get(0).equals("$"))
                 empty.add(production.left);
 
         HashSet<String> empty2 = new HashSet<>();
@@ -372,7 +372,7 @@ public class GSA {
         HashSet<NFATransition> transitions = new HashSet<>();
         HashSet<State> currStates = new HashSet<>();
         ArrayList<String> RightProduction = new  ArrayList<>();
-        RightProduction.add(unterminated.getFirst());
+        RightProduction.add(unterminated.get(0));
         Production temp = new Production("<%>", RightProduction);
         HashSet<String> startingT = new HashSet<>();
         startingT.add("#");
@@ -422,7 +422,7 @@ public class GSA {
                         }
 
                         State newS;
-                        if(production.right.getFirst().equals("$"))
+                        if(production.right.get(0).equals("$"))
                             newS = new State(production, newT, 1);
                         else
                             newS = new State(production, newT, 0);
@@ -614,7 +614,7 @@ public class GSA {
         // print to files
         try (PrintWriter actionsOut = new PrintWriter("./analizator/Actions.txt");
              PrintWriter newStatesOut = new PrintWriter("./analizator/NewStates.txt")) {
-            // --- Zapis zaglavlja ---
+
             actionsOut.print("%V");
             for (String nt : unterminated) actionsOut.print(" " + nt);
             actionsOut.println();
@@ -629,7 +629,6 @@ public class GSA {
 
             int idx = -1;
             int i = 0;
-            // --- Zapis action tablice ---
             for (HashMap<String, Action> row : actionTable) {
                 List<String> rowEntries = new ArrayList<>();
                 if(row.containsKey("<%>"))
@@ -697,3 +696,4 @@ public class GSA {
         createTables(dfa);
     }
 }
+
