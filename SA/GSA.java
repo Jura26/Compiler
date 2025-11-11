@@ -198,7 +198,7 @@ public class GSA {
             if (line.startsWith("%V")){
                 String[] parts = line.split(" ");
                 unterminated.addAll(Arrays.asList(parts));
-                unterminated.removeFirst();
+                unterminated.remove(0);
                 continue;
             }
 
@@ -206,7 +206,7 @@ public class GSA {
             if (line.startsWith("%T")){
                 String[] parts = line.split(" ");
                 terminated.addAll(Arrays.asList(parts));
-                terminated.removeFirst();
+                terminated.remove(0);
                 continue;
             }
 
@@ -214,7 +214,7 @@ public class GSA {
             if (line.startsWith("%Syn")){
                 String[] parts = line.split(" ");
                 syncSymb.addAll(Arrays.asList(parts));
-                syncSymb.removeFirst();
+                syncSymb.remove(0);
                 continue;
             }
 
@@ -234,7 +234,7 @@ public class GSA {
                 String[] parts = line.split(" ");
                 assert temp != null;
                 temp.right.addAll(Arrays.asList(parts));
-                temp.right.removeFirst();
+                temp.right.remove(0);
             }
         }
     }
@@ -654,7 +654,6 @@ public class GSA {
             }
             actionsOut.println("%Start" + idx);
 
-            // --- Zapis newState tablice ---
             for (HashMap<String, Integer> row : newStateTable) {
                 List<String> rowEntries = new ArrayList<>();
                 for (String nt : unterminated) {
@@ -696,4 +695,3 @@ public class GSA {
         createTables(dfa);
     }
 }
-

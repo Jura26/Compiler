@@ -6,7 +6,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.*;
 
-public class LexicalAnalyzer {
+public class LA {
 
     public static class Automaton {
         public String name;
@@ -92,11 +92,11 @@ public class LexicalAnalyzer {
 
     public static void analyze() {
         Set<State> R = new HashSet<>();
-        R.add(new State(automatons.getFirst().name, 0));
+        R.add(new State(automatons.get(0).name, 0));
         R = epsilonClosure(R);
         Set<State> startingStates = new HashSet<>(R);
 
-        currentStateName = automatons.getFirst().name;
+        currentStateName = automatons.get(0).name;
 
         while (end < input.length()) {
             char a = input.charAt(end);
@@ -217,7 +217,7 @@ public class LexicalAnalyzer {
                 }
 
                 String tokenText = input.substring(start, last);
-                String tokenType = entry.getValue().getFirst();
+                String tokenType = entry.getValue().get(0);
 
                 if (!tokenType.equals("-")) {
                     if (!tokenText.equals("''")) {

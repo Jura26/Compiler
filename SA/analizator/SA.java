@@ -106,21 +106,21 @@ public class SA {
                 if (line.startsWith("%V")) {
                     String[] tokens = line.split(" ");
                     unterminated.addAll(Arrays.asList(tokens));
-                    unterminated.removeFirst();
+                    unterminated.remove(0);
                     continue;
                 }
 
                 if (line.startsWith("%T")) {
                     String[] tokens = line.split(" ");
                     terminated.addAll(Arrays.asList(tokens));
-                    terminated.removeFirst();
+                    terminated.remove(0);
                     continue;
                 }
 
                 if (line.startsWith("%Syn")) {
                     String[] tokens = line.split(" ");
                     syncSymb.addAll(Arrays.asList(tokens));
-                    syncSymb.removeFirst();
+                    syncSymb.remove(0);
                     continue;
                 }
 
