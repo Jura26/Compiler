@@ -25,7 +25,9 @@ public class SA {
 
         @Override
         public boolean equals(Object o){
-            return o instanceof Production s && hashCode() == s.hashCode();
+            if(!(o instanceof Production)) return false;
+            Production s = (Production) o;
+            return s.hashCode() == this.hashCode();
         }
 
         @Override

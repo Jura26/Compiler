@@ -42,7 +42,9 @@ public class GSA {
         }
         @Override
         public boolean equals(Object o){
-            return o instanceof NFATransition s && this.hashCode() == s.hashCode();
+            if(!(o instanceof NFATransition)) return false;
+            NFATransition s = (NFATransition) o;
+            return s.hashCode() == this.hashCode();
         }
         @Override
         public int hashCode(){
@@ -114,41 +116,15 @@ public class GSA {
         }
         @Override
         public boolean equals(Object o){
-            return o instanceof State s && hashCode() == s.hashCode();
+            if(!(o instanceof State)) return false;
+            State s = (State) o;
+            return s.hashCode() == this.hashCode();
         }
         @Override
         public int hashCode(){
             return Objects.hash(item, pointer, T);
         }
     }
-
-    //    static class Production{
-//        // Left side of Production
-//        String left;
-//        // Right side of Production
-//        ArrayList<String> right;
-//
-//        // Constructor
-//        Production(String left, ArrayList<String> right){
-//            this.left = left;
-//            this.right = right;
-//        }
-//
-//        @Override
-//        public String toString(){
-//            return left + " -> " + right;
-//        }
-//
-//        @Override
-//        public boolean equals(Object o){
-//            return o instanceof State s && hashCode() == s.hashCode();
-//        }
-//
-//        @Override
-//        public int hashCode(){
-//            return Objects.hash(left, right);
-//        }
-//    }
     public static class Production{
         String left;
         ArrayList<String> right;
@@ -166,7 +142,9 @@ public class GSA {
 
         @Override
         public boolean equals(Object o){
-            return o instanceof GSA.Production s && hashCode() == s.hashCode();
+            if(!(o instanceof GSA.Production)) return false;
+            GSA.Production s = (GSA.Production) o;
+            return s.hashCode() == this.hashCode();
         }
 
         @Override
@@ -702,7 +680,7 @@ public class GSA {
                 return i;
             }
         }
-        throw new RuntimeException("Stanje nije pronađeno: " + target);
+        throw new RuntimeException("State not found: " + target);
     }
 
     public static void main(String[] args) {
