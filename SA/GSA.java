@@ -1,4 +1,3 @@
-package SA;
 import java.io.*;
 import java.util.*;
 
@@ -225,9 +224,9 @@ public class GSA {
                 productions.add(temp);
             } else {
                 // Right side of Production
-                if(!productions.getLast().right.isEmpty()){
+                if(!productions.get(productions.size() - 1).right.isEmpty()){
                     // If it is not the first row it should construct next Production instead of concatenating with |
-                    temp = new Production(productions.getLast().left, new ArrayList<>());
+                    temp = new Production(productions.get(productions.size() - 1).left, new ArrayList<>());
                     productions.add(temp);
                 }
 
@@ -609,7 +608,7 @@ public class GSA {
         if (!terminated.contains("#"))
             terminated.add("#");
         if (!unterminated.contains("<%>"))
-            unterminated.addFirst("<%>");
+            unterminated.add(0, "<%>");
 
         // print to files
         try (PrintWriter actionsOut = new PrintWriter("./analizator/Actions.txt");

@@ -1,5 +1,3 @@
-package SA.analizator;
-
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
@@ -242,7 +240,7 @@ public class SA {
                 Node newNode = new Node(prod.left);
                 for(int i = 0; i < size; i++){
                     stateStack.pop();
-                    newNode.children.addFirst(nodeStack.pop());
+                    newNode.children.add(0, nodeStack.pop());
                 }
                 nodeStack.push(newNode);
                 int nextState = newStateTable.get(stateStack.peek()).get(prod.left);
@@ -258,10 +256,10 @@ public class SA {
             System.out.print(" ");
 
         System.out.println(node);
-        if(node.children.isEmpty()){
+        if(node.children.isEmpty() && !terminalToNode.containsValue(node)){
             for(int i = 0; i < indent; i++)
                 System.out.print(" ");
-            System.out.println("$");
+            System.out.println(" $");
         }
         for(int i = 0; i < node.children.size(); i++)
             printOutput(node.children.get(i), indent + 1);
