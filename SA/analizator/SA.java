@@ -40,7 +40,7 @@ public class SA {
         Production production;
 
         public Action(String name){
-        this.name = name;
+            this.name = name;
         }
 
         public Action(String name, int amount){
