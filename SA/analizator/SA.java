@@ -40,7 +40,7 @@ public class SA {
         Production production;
 
         public Action(String name){
-            this.name = name;
+        this.name = name;
         }
 
         public Action(String name, int amount){
@@ -209,39 +209,19 @@ public class SA {
             int currState = stateStack.peek();
             String currSymbol = input.get(pointer);
             if(!actionTable.get(currState).containsKey(currSymbol)){
-                Node errorNode = terminalToNode.get(pointer);
-                String row = errorNode.toString().split(" ")[1];
-
-                // Print error info
+                Node error = terminalToNode.get(pointer);
+                String row = error.toString().split(" ")[1];
                 System.err.println("Syntax error on line " + row);
                 System.err.println("Expected input characters: ");
                 for(Map.Entry<String, Action> entry: actionTable.get(currState).entrySet())
                     System.err.print(entry.getKey() + " ");
-                System.err.println();
-                System.err.println("Read uniform character: " + currSymbol + " (" + errorNode + ")");
-
-                // Skip input tokens until a synchronization symbol is found
-                while(pointer < input.size() && !syncSymb.contains(input.get(pointer)))
-                    pointer++;
-
-                if(pointer >= input.size()){
+                System.err.println("Read uniform character: " +  terminalToNode.get(pointer).toString());
+                while(!stateStack.isEmpty() && !nodeStack.isEmpty() && !actionTable.get(currState).containsKey(currSymbol = nodeStack.pop().symbol))
+                    currState = stateStack.pop();
+                if(!actionTable.get(currState).containsKey(currSymbol)){
                     System.err.println("Input not parsed");
                     return null;
                 }
-
-                // Found a synchronization symbol; try to find a state that accepts it
-                String sync = input.get(pointer);
-                while(!stateStack.isEmpty() && !actionTable.get(stateStack.peek()).containsKey(sync)){
-                    stateStack.pop();
-                    if(!nodeStack.isEmpty()) nodeStack.pop();
-                }
-                if(stateStack.isEmpty()){
-                    System.err.println("Input not parsed");
-                    return null;
-                }
-
-                // Do not consume the synchronization symbol here; allow normal loop to handle it
-                continue;
             }
             Action currAction = actionTable.get(currState).get(currSymbol);
             if(currAction.name.equals("Shift")){
