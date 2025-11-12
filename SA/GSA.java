@@ -729,7 +729,6 @@ public class GSA {
         calculateEmpty();
         generateStartsWith();
         NFA nfa = constructNFA();
-        System.out.println(nfa.states.size());
         DFA dfa = NFAtoDFA(nfa);
         createTables(dfa);
     }
