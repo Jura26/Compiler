@@ -1,10 +1,12 @@
+package LA.analizator;
+
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.*;
 
-public class LexicalAnalyzer {
+public class LA {
 
     public static class Automaton {
         public String name;
@@ -86,15 +88,15 @@ public class LexicalAnalyzer {
     static int start = 0;
     static int last = 0;
     static int end = 0;
+    static int tokenStartLine = 1;
     static State expression = null;
 
     public static void analyze() {
         Set<State> R = new HashSet<>();
-        R.add(new State(automatons.getFirst().name, 0));
+        R.add(new State(automatons.get(0).name, 0));
         R = epsilonClosure(R);
-        Set<State> startingStates = new HashSet<>(R);
 
-        currentStateName = automatons.getFirst().name;
+        currentStateName = automatons.get(0).name;
 
         while (end < input.length()) {
             char a = input.charAt(end);
@@ -111,23 +113,42 @@ public class LexicalAnalyzer {
                     printError(start);
                     start++;
                     end = start;
+                    tokenStartLine = lineNumber;
 
                     R.clear();
                     R.add(new State(currentStateName, 0));
                     R = epsilonClosure(R);
 
                 } else {
-                    R.clear();
-                    State t = printToken();
-                    if (t == null) {
+                    // Check if this is an invalid token (like empty ZNAK '')
+                    String tokenText = input.substring(start, last);
+                    String tokenType = getTokenType(expression);
+
+                    if (tokenType != null && tokenType.equals("ZNAK") && tokenText.equals("''")) {
+                        // Reject empty ZNAK token - treat as error
+                        expression = null;
+                        printError(start);
+                        start++;
+                        end = start;
+                        tokenStartLine = lineNumber;
+
+                        R.clear();
                         R.add(new State(currentStateName, 0));
                         R = epsilonClosure(R);
                     } else {
-                        R.add(t);
-                        R = epsilonClosure(R);
+                        // Valid token - process it
+                        R.clear();
+                        State t = printToken();
+                        if (t == null) {
+                            R.add(new State(currentStateName, 0));
+                            R = epsilonClosure(R);
+                        } else {
+                            R.add(t);
+                            R = epsilonClosure(R);
+                        }
+                        tokenStartLine = lineNumber;
+                        expression = null;
                     }
-                    expression = null;
-                    end = last;
                 }
             }
         }
@@ -190,6 +211,16 @@ public class LexicalAnalyzer {
         return null;
     }
 
+    public static String getTokenType(State expression) {
+        if (expression == null) return null;
+        for (Map.Entry<State, ArrayList<String>> entry : stateToActions.entrySet()) {
+            if (entry.getKey().equals(expression)) {
+                return entry.getValue().get(0);
+            }
+        }
+        return null;
+    }
+
     public static void printError(int position) {
         if (position < input.length()) {
             char symbol = input.charAt(position);
@@ -201,6 +232,7 @@ public class LexicalAnalyzer {
 
     public static State printToken() {
         State result = null;
+        boolean vratiSe0 = false;
 
         for (Map.Entry<State, ArrayList<String>> entry : stateToActions.entrySet()) {
             if (entry.getKey().equals(expression)) {
@@ -208,23 +240,32 @@ public class LexicalAnalyzer {
                 for (int i = 1; i < entry.getValue().size(); i++) {
                     if (entry.getValue().get(i).startsWith("VRATI_SE")) {
                         int temp = Integer.parseInt(entry.getValue().get(i).substring("VRATI_SE ".length()));
-                        if (temp == 0) temp = 1;
-                        last = last - temp;
-                        end = end - temp;
+                        if (temp == 0) {
+                            // VRATI_SE 0: keep token as-is, but re-read last character
+                            vratiSe0 = true;
+                        } else {
+                            // VRATI_SE N: remove N characters from token
+                            last = last - temp;
+                            end = end - temp;
+                        }
                     }
                 }
 
-                String tokenText = input.substring(start, last);
-                String tokenType = entry.getValue().getFirst();
-
-                if (!tokenType.equals("-")) {
-                    if (!tokenText.equals("''")) {
-                        String displayText = tokenText
-                                .replace("\\", "\\\\")
-                                .replace("\n", "\\n")
-                                .replace("\t", "\\t");
-                        System.out.println(tokenType + " " + lineNumber + " " + displayText);
+                // Count newlines in the consumed text BEFORE processing actions
+                String consumedText = input.substring(start, last);
+                for (int i = 0; i < consumedText.length(); i++) {
+                    if (consumedText.charAt(i) == '\n') {
+                        lineNumber++;
+                        String newStr = consumedText.substring(0, i) + consumedText.substring(i + 1);
+                        consumedText = newStr;
                     }
+                }
+
+                String displayText = consumedText;
+                String tokenType = entry.getValue().get(0);
+
+                if (!tokenType.equals("-") && !displayText.isEmpty()) {
+                    System.out.println(tokenType.trim() + " " + tokenStartLine + " " + displayText.trim());
                 }
 
                 for (int i = 1; i < entry.getValue().size(); i++) {
@@ -233,12 +274,19 @@ public class LexicalAnalyzer {
                         result = new State(temp, 0);
                         currentStateName = temp;
                     } else if (entry.getValue().get(i).equals("NOVI_REDAK")) {
-                        lineNumber++;
+                        // NOVI_REDAK is now handled by counting newlines in consumed text above
+                        // This action exists but we don't need to increment here
                     }
                 }
 
-                start = last;
-                end = last;
+                if (vratiSe0) {
+                    // For VRATI_SE 0: re-read the last character and include it in next token
+                    start = last - 1;
+                    end = last - 1;
+                } else {
+                    start = last;
+                    end = last;
+                }
 
                 break;
             }

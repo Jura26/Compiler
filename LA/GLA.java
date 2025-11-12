@@ -1,3 +1,4 @@
+package LA;
 import java.io.*;
 import java.util.*;
 
@@ -247,7 +248,6 @@ public class GLA {
                 while(!(line = br.readLine()).trim().equals("}"))
                     currentRule.actions.add(line.trim());
                 rules.add(currentRule);
-                continue;
             }
         }
 
