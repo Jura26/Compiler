@@ -24,6 +24,7 @@ public class SemA {
 
         // expression attributes
         Type type;
+        Type itype; // inherited type - type of parent
         boolean lvalue;
 
         public Node() {
@@ -48,6 +49,7 @@ public class SemA {
 
         Basic basic;
         boolean isSequence = false;
+        boolean isConst = false;
 
         Type(Basic basic) {
             this.basic = basic;
@@ -153,10 +155,62 @@ public class SemA {
     }
 
     static void process(Node node){
-        switch(node.label){
-            case "<>":
-
+        if (node.label.equals("<prijevodna_jedinica>")) {
+            if (node.children.size()==1){
+                process(node.children.get(0));
+                return;
+            }else if (node.children.size()==2){
+                process(node.children.get(0));
+                process(node.children.get(1));
+                return;
+            }
         }
+
+        if (node.label.equals("<deklaracija>")){
+            Node imeTipa = node.children.get(0);
+            Node listaInitDek = node.children.get(1);
+
+            process(imeTipa);
+
+            listaInitDek.itype = imeTipa.type;
+            process(listaInitDek);
+            return;
+        }
+
+        if (node.label.equals("<ime_tipa>")){
+            if (node.children.size()==1){
+                Node spec = node.children.get(0);
+                node.type = spec.type;
+                process(spec);
+                return;
+            }else if (node.children.size()==2){
+                Node spec = node.children.get(1);
+                Type t = new Type(spec.type.basic);
+                t.isSequence = spec.type.isSequence;
+                t.isConst = true;
+
+                node.type = t;
+
+                if (spec.type.basic == Type.Basic.VOID){
+                    //error()
+                }
+                return;
+            }
+        }
+
+        if (node.label.equals("<specifikator_tipa>")){
+            if (node.children.get(0).equals("KR_VOID")){
+                node.type = new Type(Type.Basic.VOID);
+            }else if (node.children.get(0).equals("KR_INT")){
+                node.type = new Type(Type.Basic.INT);
+            }else if (node.children.get(0).equals("KR_CHAR")){
+                node.type = new Type(Type.Basic.CHAR);
+            }
+            return;
+        }
+
+        for (Node child : node.children)
+            process(child);
     }
 
     public static void main(String[] args) {
@@ -168,6 +222,6 @@ public class SemA {
         }
 
         ispisiStablo(root, 0);
-
+        process(root);
     }
 }
