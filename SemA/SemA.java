@@ -3,6 +3,7 @@ package SemA;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.lang.reflect.Type;
 import java.util.*;
 
 public class SemA {
@@ -18,6 +19,7 @@ public class SemA {
         Type type;
         Type itype; // inherited type - type of parent
         boolean lvalue;
+        List<Type> tipovi = null; // lista tipova argumenata (za <lista_argumenata>)
 
         // variables important for output
         int row = -1;
@@ -47,6 +49,9 @@ public class SemA {
         Basic basic;
         boolean isSequence = false;
         boolean isConst = false;
+        boolean isFunction = false;
+        Type returnType = null;  // povratni tip funkcije (pov)
+        List<Type> paramTypes = null;  // tipovi parametara funkcije (params)
 
         Type(Basic basic) {
             this.basic = basic;
@@ -170,20 +175,42 @@ public class SemA {
     }
 
     static boolean canAssign(Type from, Type to) {
+        if (from == null || to == null)
+            return false;
 
+        // Nizovi
         if (from.isSequence || to.isSequence) {
-            if (from.isSequence && to.isSequence) {
-                // niz(T) -> niz(const(T))
-                return from.basic == to.basic &&
-                        !from.isConst &&
-                        to.isConst;
-            }
+            // Oba moraju biti nizovi
+            if (!from.isSequence || !to.isSequence)
+                return false;
+
+            // Osnovni tipovi moraju biti isti
+            if (from.basic != to.basic)
+                return false;
+
+            // niz(T) -> niz(T) - refleksivnost
+            if (!from.isConst && !to.isConst)
+                return true;
+
+            // niz(const(T)) -> niz(const(T)) - refleksivnost
+            if (from.isConst && to.isConst)
+                return true;
+
+            // niz(T) -> niz(const(T)) - gdje T nije const
+            if (!from.isConst && to.isConst)
+                return true;
+
+            // niz(const(T)) -> niz(T) - NE
             return false;
         }
 
+        // Primitivni tipovi - isti basic type (const se ignorira za kompatibilnost)
+        // T -> T, const(T) -> T, T -> const(T), const(T) -> const(T)
         if (from.basic == to.basic)
             return true;
 
+        // char -> int (bez obzira na const)
+        // char -> int, const(char) -> int, char -> const(int), const(char) -> const(int)
         if (from.basic == Type.Basic.CHAR && to.basic == Type.Basic.INT)
             return true;
 
@@ -237,6 +264,7 @@ public class SemA {
                     process(node.children.get(1));
                 }
                 //error
+                break;
 
             case "<postfiks izraz>":
                 if(node.children.size() == 1 && node.children.get(0).label.equals("<primarni_izraz>")){
@@ -244,9 +272,96 @@ public class SemA {
                     node.lvalue = node.children.get(0).lvalue;
                     process(node.children.get(0));
                 }
-                else if (){
+                else if(node.children.size() == 4 && node.children.get(0).label.equals("<postfiks_izraz>") &&  node.children.get(1).label.equals("L_UGL_ZAGRADA") && node.children.get(2).label.equals("<izraz>") && node.children.get(3).label.equals("D_UGL_ZAGRADA")){
+                    Node postfiks = node.children.get(0);
+                    Node izraz = node.children.get(2);
 
+                    // 1. provjeri(<postfiks_izraz>)
+                    process(postfiks);
+
+                    // 2. <postfiks_izraz>.tip = niz(X)
+                    if (postfiks.type == null || !postfiks.type.isSequence) {
+                        // error: indexing non-array type
+                    }
+
+                    Type elementType = new Type(postfiks.type.basic);
+                    elementType.isSequence = false;
+                    elementType.isConst = postfiks.type.isConst;
+                    node.type = elementType;
+
+                    node.lvalue = !elementType.isConst;
+
+                    process(izraz);
+
+                    Type intType = new Type(Type.Basic.INT);
+                    if (izraz.type == null || !canAssign(izraz.type, intType)) {
+                        // error: index not compatible with int
+                    }
                 }
+                else if(node.children.size() == 3 && node.children.get(0).label.equals("<postfiks_izraz>") && node.children.get(1).label.equals("L_ZAGRADA") && node.children.get(2).label.equals("D_ZAGRADA")){
+                    Node postfiks = node.children.get(0);
+
+                    // 1. provjeri(<postfiks_izraz>)
+                    process(postfiks);
+
+                    // 2. <postfiks_izraz>.tip = funkcija(void → pov)
+                    if (postfiks.type == null || !postfiks.type.isFunction) {
+                        // error: not a function type
+                    }
+
+                    // tip ← pov (povratni tip funkcije)
+                    node.type = postfiks.type.returnType;
+                    node.lvalue = false;
+                }
+                else if(node.children.size() == 4 && node.children.get(0).label.equals("<postfiks_izraz>") && node.children.get(1).label.equals("L_ZAGRADA") && node.children.get(2).label.equals("<lista_argumenata>") && node.children.get(3).label.equals("D_ZAGRADA")){
+                    Node postfiks = node.children.get(0);
+                    Node listaArgumenata = node.children.get(2);
+
+                    // 1. provjeri(<postfiks_izraz>)
+                    process(postfiks);
+
+                    // 2. provjeri(<lista_argumenata>)
+                    process(listaArgumenata);
+
+                    // 3. <postfiks_izraz>.tip = funkcija(params → pov)
+                    if (postfiks.type == null || !postfiks.type.isFunction) {
+                        // error: not a function type
+                    }
+
+                    // Provjeri da broj argumenata odgovara broju parametara
+                    if (postfiks.type.paramTypes == null || listaArgumenata.tipovi == null ||
+                        postfiks.type.paramTypes.size() != listaArgumenata.tipovi.size()) {
+                        // error: broj argumenata ne odgovara broju parametara
+                    }
+
+                    // Provjeri da su tipovi argumenata kompatibilni s tipovima parametara (redom)
+                    for (int i = 0; i < postfiks.type.paramTypes.size(); i++) {
+                        Type argType = listaArgumenata.tipovi.get(i);
+                        Type paramType = postfiks.type.paramTypes.get(i);
+
+                        if (!canAssign(argType, paramType)) {
+                            // error: tip argumenta nije kompatibilan s tipom parametra
+                        }
+                    }
+
+                    // tip ← pov (povratni tip funkcije)
+                    node.type = postfiks.type.returnType;
+                    node.lvalue = false;
+                }
+                else if(node.children.size() == 2 &&
+                        node.children.get(0).label.equals("<postfiks_izraz>") &&
+                        (node.children.get(1).label.equals("OP_INC") ||
+                                node.children.get(1).label.equals("OP_DEC")))
+                {
+                    Node postfiks = node.children.get(0);
+                    process(postfiks);
+                    if(!postfiks.lvalue || !canAssign(postfiks.type, new Type(Type.Basic.INT))){
+                        //error
+                    }
+                    node.type = new Type(Type.Basic.INT);
+                    node.lvalue = false;
+                }
+                break;
 
             case "<prijevodna_jedinica>":
                 if(node.children.size()!= 1 && node.children.size()!= 2){}
