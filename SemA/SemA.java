@@ -3,10 +3,7 @@ package SemA;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Stack;
+import java.util.*;
 
 public class SemA {
 
@@ -17,15 +14,15 @@ public class SemA {
         int id;
         String label;
         List<Node> children = new ArrayList<>();
+        // expression attributes
+        Type type;
+        Type itype; // inherited type - type of parent
+        boolean lvalue;
 
         // variables important for output
         int row = -1;
         String lexValue = null;
 
-        // expression attributes
-        Type type;
-        Type itype; // inherited type - type of parent
-        boolean lvalue;
 
         public Node() {
             this.id = nodeId++;
@@ -34,7 +31,7 @@ public class SemA {
 
     static class scopeNode {
         int id;
-        HashMap<String, Symbol> localVariables = new HashMap<>();
+        HashSet<Symbol> localVariables = new HashSet<>();
         scopeNode parent;
 
         public scopeNode(scopeNode parent) {
@@ -57,12 +54,30 @@ public class SemA {
     }
 
     static class Symbol {
-        String name;
+        String lexValue;
+
+        // expression attributes
         Type type;
+        String label;
+        Type itype; // inherited type - type of parent
+        boolean lvalue;
 
         Symbol(String name, Type type) {
-            this.name = name;
+            this.lexValue = name;
             this.type = type;
+        }
+
+        @Override
+        public boolean equals(Object other){
+            if (other == null) return false;
+
+            Symbol o = (Symbol) other;
+
+            return o.hashCode() == this.hashCode();
+        }
+        @Override
+        public int hashCode(){
+            return this.type.hashCode() + this.lexValue.hashCode();
         }
     }
 
@@ -154,64 +169,197 @@ public class SemA {
         }
     }
 
+    static boolean canAssign(Type from, Type to) {
+
+        if (from.isSequence || to.isSequence) {
+            if (from.isSequence && to.isSequence) {
+                // niz(T) -> niz(const(T))
+                return from.basic == to.basic &&
+                        !from.isConst &&
+                        to.isConst;
+            }
+            return false;
+        }
+
+        if (from.basic == to.basic)
+            return true;
+
+        if (from.basic == Type.Basic.CHAR && to.basic == Type.Basic.INT)
+            return true;
+
+        return false;
+    }
+
+
     static void process(Node node){
-        if (node.label.equals("<prijevodna_jedinica>")) {
-            if (node.children.size()==1){
-                process(node.children.get(0));
-                return;
-            }else if (node.children.size()==2){
-                process(node.children.get(0));
-                process(node.children.get(1));
-                return;
-            }
-        }
-
-        if (node.label.equals("<deklaracija>")){
-            Node imeTipa = node.children.get(0);
-            Node listaInitDek = node.children.get(1);
-
-            process(imeTipa);
-
-            listaInitDek.itype = imeTipa.type;
-            process(listaInitDek);
-            return;
-        }
-
-        if (node.label.equals("<ime_tipa>")){
-            if (node.children.size()==1){
-                Node spec = node.children.get(0);
-                node.type = spec.type;
-                process(spec);
-                return;
-            }else if (node.children.size()==2){
-                Node spec = node.children.get(1);
-                Type t = new Type(spec.type.basic);
-                t.isSequence = spec.type.isSequence;
-                t.isConst = true;
-
-                node.type = t;
-
-                if (spec.type.basic == Type.Basic.VOID){
-                    //error()
+        switch(node.label) {
+            case "<primarni_izraz>":
+                if(node.children.isEmpty()){
+                    //error
                 }
-                return;
-            }
-        }
+                if(node.children.size() == 1 && node.children.get(0).label.equals("IDN")){
+                    boolean found = false;
+                    ArrayList<scopeNode> list = new ArrayList<>();
+                    while(!found || !scopeStack.isEmpty()) {
+                        list.add(scopeStack.pop());
+                        for (Symbol s : list.get(list.size() - 1).localVariables)
+                            if (s.label.equals("IDN") && s.lexValue.equals(node.children.get(0).lexValue)){
+                                found = true;
 
-        if (node.label.equals("<specifikator_tipa>")){
-            if (node.children.get(0).equals("KR_VOID")){
-                node.type = new Type(Type.Basic.VOID);
-            }else if (node.children.get(0).equals("KR_INT")){
-                node.type = new Type(Type.Basic.INT);
-            }else if (node.children.get(0).equals("KR_CHAR")){
-                node.type = new Type(Type.Basic.CHAR);
-            }
-            return;
+                                node.type = s.type;
+                                node.lvalue = s.lvalue;
+                            }
+                    }
+                    for(int i = list.size() - 1; i >= 0; i--)
+                        scopeStack.push(list.remove(i));
+
+                    if(!found){
+                        //error
+                    }
+                }
+                else if(node.children.size() == 1 && node.children.get(0).label.equals("BROJ")){
+                    node.type = new Type(Type.Basic.INT);
+                    node.lvalue = false;
+                }
+                else if(node.children.size() == 1 && node.children.get(0).label.equals("ZNAK")){
+                    node.type = new Type(Type.Basic.CHAR);
+                    node.lvalue = false;
+                }
+                else if(node.children.size() == 1 && node.children.get(0).label.equals("NIZ_ZNAKOVA")){
+                    node.type = new Type(Type.Basic.CHAR);
+                    node.type.isSequence = true;
+                    node.type.isConst = true;
+                    node.lvalue = false;
+                }
+                else if(node.children.size() == 3 && node.children.get(0).label.equals("L_ZAGRADA") && node.children.get(1).label.equals("<izraz>") && node.children.get(2).label.equals("D_ZAGRADA")){
+                    node.type = node.children.get(1).type;
+                    node.lvalue = node.children.get(1).lvalue;
+                    process(node.children.get(1));
+                }
+                //error
+
+            case "<postfiks izraz>":
+                if(node.children.size() == 1 && node.children.get(0).label.equals("<primarni_izraz>")){
+                    node.type = node.children.get(0).type;
+                    node.lvalue = node.children.get(0).lvalue;
+                    process(node.children.get(0));
+                }
+                else if (){
+
+                }
+
+            case "<prijevodna_jedinica>":
+                if(node.children.size()!= 1 && node.children.size()!= 2){}
+                    //error
+                if(!node.children.get(0).label.equals("<vanjska_deklaracija>") || !(node.children.get(0).label.equals("<prijevodna_jedinica>") && node.children.get(1).label.equals("<vanjska_deklaracija>"))){}
+                    //error
+                for(Node child: node.children)
+                    process(child);
+                break;
+
+            case "<deklaracija>":
+                if (node.children.size()!=3){
+                    if (node.children.get(0).label.equals("<ime_tipa>") && node.children.get(1).label.equals("<lista_init_deklaratora>") && node.children.get(2).label.equals("TOCKAZAREZ")) {
+                        Node imeTipa = node.children.get(0);
+                        Node listaInitDek = node.children.get(1);
+
+                        process(imeTipa);
+
+                        listaInitDek.itype = imeTipa.type;
+                        process(listaInitDek);
+                        break;
+                    }else{
+                        //error
+                    }
+                }else{
+                    //error
+                }
+
+            case "<ime_tipa>":
+                if (node.children.size()==1){
+                    Node spec = node.children.get(0);
+                    node.type = spec.type;
+                    process(spec);
+                    return;
+                }else if (node.children.size()==2){
+                    Node spec = node.children.get(1);
+                    Type t = new Type(spec.type.basic);
+                    t.isSequence = spec.type.isSequence;
+                    t.isConst = true;
+
+                    node.type = t;
+
+                    if (spec.type.basic == Type.Basic.VOID){
+                        //error()
+                    }
+                }
+
+            case "<specifikator_tipa>":
+                if (node.children.get(0).equals("KR_VOID")){
+                    node.type = new Type(Type.Basic.VOID);
+                }else if (node.children.get(0).equals("KR_INT")){
+                    node.type = new Type(Type.Basic.INT);
+                }else if (node.children.get(0).equals("KR_CHAR")){
+                    node.type = new Type(Type.Basic.CHAR);
+                }
+                break;
+
+            case "<izraz_pridruzivanja>":
+                if (node.children.size() == 1) {
+                    Node e = node.children.get(0);
+                    process(e);
+                    node.type = e.type;
+                    node.lvalue = e.lvalue;
+                } else {
+                    Node postfiks = node.children.get(0);
+                    Node izraz = node.children.get(2);
+
+                    process(postfiks);
+
+                    if (!postfiks.lvalue) {
+                        //error
+                    }
+
+                    process(izraz);
+
+                    if (!canAssign(izraz.type, postfiks.type)) {
+                        //error
+                    }
+                    node.type = postfiks.type;
+                    node.lvalue = false;
+                }
+                break;
+
+            case "<izraz>":
+                if (node.children.size()==1){
+                    if (node.children.get(0).label.equals("<izraz_pridruzivanja>")){
+                        Node izraz_pri = node.children.get(0);
+                        process(izraz_pri);
+                        node.type = izraz_pri.type;
+                        node.lvalue = izraz_pri.lvalue;
+                    }else{
+                        //error
+                    }
+                }else if (node.children.size()==3){
+                    if (node.children.get(0).label.equals("<izraz>") && node.children.get(1).label.equals("ZAREZ") && node.children.get(2).label.equals("<izraz_pridruzivanja>")) {
+                        Node izraz_pri = node.children.get(2);
+                        process(node.children.get(0));
+                        process(izraz_pri);
+                        node.type = izraz_pri.type;
+                        node.lvalue = false;
+                    }else{
+                        //error
+                    }
+                }else{
+                    //error
+                }
+            default:
+                return;        
         }
 
         for (Node child : node.children)
             process(child);
-    }
+        }
 
     public static void main(String[] args) {
         Node root = null;
