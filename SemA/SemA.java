@@ -94,6 +94,10 @@ public class SemA {
             if (!(o instanceof Symbol)) return false;
             return this.lexValue.equals(((Symbol)o).lexValue);
         }
+        @Override
+        public String toString() {
+            return lexValue + " " + label;
+        }
     }
 
     private static int depth(String line){
@@ -173,17 +177,6 @@ public class SemA {
         return ns;
     }
 
-    static void ispisiStablo(Node c, int dubina) {
-        System.out.print(" ".repeat(dubina));
-        System.out.println(c.id +
-                (c.lexValue != null ? " (" + c.lexValue + ")" : "")
-        );
-
-        for (Node dijete : c.children) {
-            ispisiStablo(dijete, dubina + 1);
-        }
-    }
-
     static boolean canAssign(Type from, Type to) {
         if (from == null || to == null)
             return false;
@@ -233,27 +226,29 @@ public class SemA {
         return from.basic == Type.Basic.INT && to.basic == Type.Basic.CHAR;
     }
 
-
     static void process(Node node) {
         switch (node.label) {
             case "<primarni_izraz>":
                 if (node.children.size() == 1 && node.children.get(0).label.equals("IDN")) {
                     boolean found = false;
                     scopeNode curr = scopeStack.peek();
-                    while (!found && curr != null) {
-                        for (Symbol s : curr.localVariables)
-                            if (s.label.equals("IDN") && s.lexValue.equals(node.children.get(0).lexValue)) {
-                                found = true;
 
+                    while (!found && curr != null) {
+
+                        for (Symbol s : curr.localVariables) {
+                            if (s.lexValue.equals(node.children.get(0).lexValue)) {
+                                found = true;
                                 node.type = s.type;
                                 node.lvalue = s.lvalue;
                             }
+                        }
                         curr = curr.parent;
                     }
 
                     if (!found) {
                         err(node);
                     }
+
                 } else if (node.children.size() == 1 && node.children.get(0).label.equals("BROJ")) {
                     node.type = new Type(Type.Basic.INT);
                     node.lvalue = false;
@@ -272,12 +267,14 @@ public class SemA {
                 }
                 break;
 
-            case "<postfiks izraz>":
+            case "<postfiks_izraz>":
                 if (node.children.size() == 1 && node.children.get(0).label.equals("<primarni_izraz>")) {
+
                     process(node.children.get(0));
                     node.type = new Type(node.children.get(0).type);
                     node.lvalue = node.children.get(0).lvalue;
                 } else if (node.children.size() == 4 && node.children.get(0).label.equals("<postfiks_izraz>") && node.children.get(1).label.equals("L_UGL_ZAGRADA") && node.children.get(2).label.equals("<izraz>") && node.children.get(3).label.equals("D_UGL_ZAGRADA")) {
+
                     Node postfiks = node.children.get(0);
                     Node izraz = node.children.get(2);
 
@@ -303,6 +300,7 @@ public class SemA {
                         err(node);
                     }
                 } else if (node.children.size() == 3 && node.children.get(0).label.equals("<postfiks_izraz>") && node.children.get(1).label.equals("L_ZAGRADA") && node.children.get(2).label.equals("D_ZAGRADA")) {
+
                     Node postfiks = node.children.get(0);
 
                     // 1. provjeri(<postfiks_izraz>)
@@ -317,6 +315,7 @@ public class SemA {
                     node.type = new Type(postfiks.type.returnType);
                     node.lvalue = false;
                 } else if (node.children.size() == 4 && node.children.get(0).label.equals("<postfiks_izraz>") && node.children.get(1).label.equals("L_ZAGRADA") && node.children.get(2).label.equals("<lista_argumenata>") && node.children.get(3).label.equals("D_ZAGRADA")) {
+
                     Node postfiks = node.children.get(0);
                     Node listaArgumenata = node.children.get(2);
 
@@ -354,6 +353,7 @@ public class SemA {
                         node.children.get(0).label.equals("<postfiks_izraz>") &&
                         (node.children.get(1).label.equals("OP_INC") ||
                                 node.children.get(1).label.equals("OP_DEC"))) {
+
                     Node postfiks = node.children.get(0);
                     process(postfiks);
                     if (!postfiks.lvalue || !canAssign(postfiks.type, new Type(Type.Basic.INT))) {
@@ -364,7 +364,7 @@ public class SemA {
                 }
                 break;
 
-            case "<lista argumenata>":
+            case "<lista_argumenata>":
                 if (node.children.size() == 1 && node.children.get(0).label.equals("<izraz_pridruzivanja>")) {
                     process(node.children.get(0));
                     node.types = new ArrayList<>();
@@ -382,11 +382,13 @@ public class SemA {
 
             case "<unarni_izraz>":
                 if (node.children.size() == 1 && node.children.get(0).label.equals("<postfiks_izraz>")) {
+
                     process(node.children.get(0));
                     node.type = node.children.get(0).type;
                     node.lvalue = node.children.get(0).lvalue;
                 }
                 if (node.children.size() == 2 && (node.children.get(0).label.equals("OP_INC") || node.children.get(0).label.equals("OP_DEC")) && node.children.get(1).label.equals("<unarni_izraz>")) {
+
                     process(node.children.get(1));
                     if (!node.children.get(1).lvalue || !canAssign(node.children.get(1).type, new Type(Type.Basic.INT))) {
                         err(node);
@@ -395,6 +397,7 @@ public class SemA {
                     node.lvalue = false;
                 }
                 if (node.children.size() == 2 && node.children.get(0).label.equals("<unarni_operator>") && node.children.get(1).label.equals("<cast_izraz>")) {
+
                     process(node.children.get(1));
                     if (!canAssign(node.children.get(1).type, new Type(Type.Basic.INT))) {
                         err(node);
@@ -409,10 +412,12 @@ public class SemA {
 
             case "<cast_izraz>":
                 if (node.children.size() == 1 && node.children.get(0).label.equals("<unarni_izraz>")) {
+
                     process(node.children.get(0));
                     node.type = node.children.get(0).type;
                     node.lvalue = node.children.get(0).lvalue;
                 } else if (node.children.size() == 4 && node.children.get(0).label.equals("L_ZAGRADA") && node.children.get(1).label.equals("<ime_tipa>") && node.children.get(2).label.equals("D_ZAGRADA") && node.children.get(3).label.equals("<cast_izraz>")) {
+
                     Node typeName = node.children.get(1);
                     Node castExp = node.children.get(3);
 
@@ -433,9 +438,9 @@ public class SemA {
                     process(node.children.get(0));
                     node.type = node.children.get(0).type;
                 } else if (node.children.size() == 2 && node.children.get(0).label.equals("KR_CONST") && node.children.get(1).label.equals("<specifikator_tipa>")) {
+
                     Node spec = node.children.get(1);
                     process(spec);
-
                     if (spec.type.basic == Type.Basic.VOID) {
                         err(node);
                     }
@@ -507,7 +512,7 @@ public class SemA {
                 }
                 break;
 
-            case "<odnosni izraz>":
+            case "<odnosni_izraz>":
                 if (node.children.size() == 1 && node.children.get(0).label.equals("<aditivni_izraz>")) {
                     process(node.children.get(0));
                     node.type = new Type(node.children.get(0).type);
@@ -556,7 +561,7 @@ public class SemA {
                     process(node.children.get(0));
                     node.type = new Type(node.children.get(0).type);
                     node.lvalue = node.children.get(0).lvalue;
-                } else if (node.children.size() == 3 && node.children.get(0).label.equals("<bin_i_izraz>") && node.children.get(1).label.equals("OP_BIN_I") && node.children.get(2).label.equals("<jednakosni_izraz")) {
+                } else if (node.children.size() == 3 && node.children.get(0).label.equals("<bin_i_izraz>") && node.children.get(1).label.equals("OP_BIN_I") && node.children.get(2).label.equals("<jednakosni_izraz>")) {
                     process(node.children.get(0));
                     if (!canAssign(node.children.get(0).type, new Type(Type.Basic.INT))) {
                         err(node);
@@ -598,7 +603,7 @@ public class SemA {
                     process(node.children.get(0));
                     node.type = new Type(node.children.get(0).type);
                     node.lvalue = node.children.get(0).lvalue;
-                } else if (node.children.size() == 3 && node.children.get(0).label.equals("<bin_ili_izraz>") && node.children.get(1).label.equals("OP_BIN_ILI") && node.children.get(2).label.equals("<bin_xili_izraz")) {
+                } else if (node.children.size() == 3 && node.children.get(0).label.equals("<bin_ili_izraz>") && node.children.get(1).label.equals("OP_BIN_ILI") && node.children.get(2).label.equals("<bin_xili_izraz>")) {
                     process(node.children.get(0));
                     if (!canAssign(node.children.get(0).type, new Type(Type.Basic.INT))) {
                         err(node);
@@ -731,7 +736,7 @@ public class SemA {
                 }
                 break;
 
-            case "<lista naredbi>":
+            case "<lista_naredbi>":
                 if (node.children.size() == 1 && node.children.get(0).label.equals("<naredba>")) {
                     process(node.children.get(0));
                 } else if (node.children.size() == 2 && node.children.get(0).label.equals("<lista_naredbi>") && node.children.get(1).label.equals("<naredba>")) {
@@ -827,7 +832,7 @@ public class SemA {
                         err(node);
                     }
                 } else if (node.children.size() == 2 && node.children.get(0).label.equals("KR_RETURN") && node.children.get(1).label.equals("TOCKAZAREZ")) {
-                    Type returnType = functionStack.peek().returnType;
+                    Type returnType = functionStack.peek();
                     if (returnType.basic != Type.Basic.VOID) {
                         // error
                         err(node);
@@ -835,7 +840,7 @@ public class SemA {
                 } else if (node.children.size() == 3 && node.children.get(0).label.equals("KR_RETURN") && node.children.get(1).label.equals("<izraz>") && node.children.get(2).label.equals("TOCKAZAREZ")) {
                     process(node.children.get(1));
 
-                    if (!canAssign(node.children.get(1).type, functionStack.peek().returnType)) {
+                    if (!canAssign(node.children.get(1).type, functionStack.peek())) {
                         // error
                         err(node);
                     }
@@ -930,7 +935,15 @@ public class SemA {
                     functionStack.push(returnType);
 
                     // 6. provjeri(<slozena_naredba>)
-                    process(node.children.get(5));
+                    newScope();
+                    Node slozena = node.children.get(5);
+                    if (slozena.children.size() == 3) {
+                         process(slozena.children.get(1));
+                    } else if (slozena.children.size() == 4) {
+                         process(slozena.children.get(1));
+                         process(slozena.children.get(2));
+                    }
+                    scopeStack.pop();
 
                     functionStack.pop();
 
@@ -998,53 +1011,6 @@ public class SemA {
 
                     functionStack.push(returnType);
 
-                    // Special handling for scope before processing block to insert parameters
-                    // We need to 'peek' into the next scope or insert them into the scope create by slozena_naredba
-                    // But slozena_naredba creates a new scope.
-                    // The standard way is that parameters are in the function scope.
-                    // Since slozena_naredba creates a new scope, we might need to pre-populate it?
-                    // Or more likely, the parameters are effectively in the scope of the block.
-                    // Given the structure, we can't easily inject into created scope inside slozena_naredba.
-                    // Modifications to ensure params are visible in the function body:
-
-                    // Simpler approach: Create a temporary scope here, add params, then process slozena_naredba
-                    // But slozena_naredba does `newScope()`.
-                    // If we do newScope here, then slozena_naredba does another, we get nesting.
-
-                    // Correct logic: The function body is a block. Parameters are local to that block.
-                    // But we can't edit slozena_naredba.
-                    // Let's look at how slozena_naredba works. It creates a new scope.
-                    // We can employ a trick: Push a scope, add params, then let slozena_naredba push ANOTHER scope?
-                    // No, parameters should be in the immediate scope of the function body.
-
-                    // Wait, the instructions say:
-                    // "Djelokrug definiran slozenom naredbom, tj. tijelom funkcije, pridruzuje se definiciji funkcije"
-
-                    // Let's hack it: Prepare the parameters to be added to the NEXT scope created.
-                    // Or we can manually trigger the scope creation here and avoid it in slozena_naredba? No, can't change that node logic easily without messing other things.
-
-                    // Actually, if we look at typical C scope rules, function parameters are in the function scope.
-                    // The body block adds another scope? Usually not, or it's the SAME scope.
-                    // But here slozena_naredba definitely calls newScope().
-                    // If we add params to the current global scope? No.
-
-                    // A common pattern in these labs:
-                    // Create a scope, add params.
-                    // Then parse the block. BUT the block parser creates a scope.
-                    // Is it possible to add them to the scope created by slozena_naredba?
-                    // We can pre-calculate them and put them in a static list `pendingParameters`?
-
-                    // Or, we can modify `slozena_naredba` handling to support context.
-                    // But I strictly need to implement `process` for `definicija_funkcije` here.
-
-                    // Let's assume for now we push a scope here with parameters.
-                    // Then slozena_naredba pushes another scope.
-                    // Then the variables inside are in a sub-scope of parameters. This works for visibility!
-                    // If I declare `int x` in body, and `int x` is a param, it shadows it. That is valid C?
-                    // Actually in C you cannot redeclare a parameter in the top-level block of the function.
-                    // "6.3.2. ... specific structure checks..."
-
-                    // Let's just push a special scope for parameters.
                     newScope();
                     scopeNode paramScope = scopeStack.peek();
                     for (int i = 0; i < paramNames.size(); ++i) {
@@ -1054,7 +1020,13 @@ public class SemA {
                     }
 
                     // Now process body. It will create a sub-scope.
-                    process(node.children.get(5));
+                    Node slozena = node.children.get(5);
+                    if (slozena.children.size() == 3) {
+                         process(slozena.children.get(1));
+                    } else if (slozena.children.size() == 4) {
+                         process(slozena.children.get(1));
+                         process(slozena.children.get(2));
+                    }
 
                     // Pop param scope
                     scopeStack.pop();
@@ -1189,6 +1161,7 @@ public class SemA {
 
             case "<izravni_deklarator>":
                 if (node.children.size() == 1 && node.children.get(0).label.equals("IDN")) {
+
                     if (node.itype.basic == Type.Basic.VOID) {
                         // error
                         err(node);
@@ -1200,7 +1173,7 @@ public class SemA {
                             break;
                         }
                     }
-                    curr.localVariables.add(new Symbol(node.children.get(0).lexValue, node.children.get(0).type));
+                    curr.localVariables.add(new Symbol(node.children.get(0).lexValue, new Type(node.itype)));
                     node.type = new Type(node.itype);
                 } else if (node.children.size() == 4 && node.children.get(0).label.equals("IDN") && node.children.get(1).label.equals("L_UGL_ZAGRADA") && node.children.get(2).label.equals("BROJ") && node.children.get(3).label.equals("D_UGL_ZAGRADA")) {
                     if (node.itype.basic == Type.Basic.VOID) {
@@ -1237,13 +1210,19 @@ public class SemA {
                         }
                     }
                     if (!found) {
-                        Symbol s = new Symbol(node.children.get(0).label, node.children.get(0).type);
+                        Symbol s = new Symbol(node.children.get(0).lexValue, new Type(node.itype));
                         s.type.isFunction = true;
                         s.type.paramTypes = new ArrayList<>();
                         s.type.paramTypes.add(new Type(Type.Basic.VOID));
                         s.type.returnType = new Type(node.itype);
                         curr.localVariables.add(s);
                     }
+                    Type funcType = new Type(node.itype);
+                    funcType.isFunction = true;
+                    funcType.paramTypes = new ArrayList<>();
+                    funcType.paramTypes.add(new Type(Type.Basic.VOID));
+                    funcType.returnType = new Type(node.itype);
+                    node.type = funcType;
                 } else if (node.children.size() == 4 && node.children.get(0).label.equals("IDN") && node.children.get(1).label.equals("L_ZAGRADA") && node.children.get(2).label.equals("<lista_parametara>") && node.children.get(3).label.equals("D_ZAGRADA")) {
                     process(node.children.get(2));
                     scopeNode curr = scopeStack.peek();
@@ -1258,12 +1237,17 @@ public class SemA {
                         }
                     }
                     if (!found) {
-                        Symbol s = new Symbol(node.children.get(0).label, node.children.get(0).type);
+                        Symbol s = new Symbol(node.children.get(0).lexValue, new Type(node.itype));
                         s.type.isFunction = true;
                         s.type.paramTypes = node.children.get(2).types;
                         s.type.returnType = new Type(node.itype);
                         curr.localVariables.add(s);
                     }
+                    Type funcType = new Type(node.itype);
+                    funcType.isFunction = true;
+                    funcType.paramTypes = node.children.get(2).types;
+                    funcType.returnType = new Type(node.itype);
+                    node.type = funcType;
                 } else {
                     err(node);
                 }
