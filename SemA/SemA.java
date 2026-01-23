@@ -10,6 +10,8 @@ public class SemA {
     static int nodeId = 0;
     static int scopeNodeId = 0;
     static HashSet<String> definedFunctions = new HashSet<>();
+    static Map<String, Type> allDeclaredFunctions = new HashMap<>();
+    static Map<String, List<Type>> allDefinedFunctions = new HashMap<>();
     static Stack<Type> functionStack = new Stack<>();
 
     // nodes used to analyze input
@@ -267,12 +269,35 @@ public class SemA {
                     }
 
                 } else if (node.children.size() == 1 && node.children.get(0).label.equals("BROJ")) {
-                    node.type = new Type(Type.Basic.INT);
-                    node.lvalue = false;
+                    try {
+                        long br = Long.parseLong(node.children.get(0).lexValue);
+                        if (br < Integer.MIN_VALUE || br > Integer.MAX_VALUE) {
+                            err(node);
+                        }
+                        node.type = new Type(Type.Basic.INT);
+                        node.lvalue = false;
+                    } catch (NumberFormatException nfe){
+                        err(node);
+                    }
                 } else if (node.children.size() == 1 && node.children.get(0).label.equals("ZNAK")) {
                     node.type = new Type(Type.Basic.CHAR);
                     node.lvalue = false;
                 } else if (node.children.size() == 1 && node.children.get(0).label.equals("NIZ_ZNAKOVA")) {
+                    String s = node.children.get(0).lexValue;
+                    for (int i = 1; i < s.length() - 1; i++) {
+                        if (s.charAt(i) == '\\') {
+                            if (i + 1 >= s.length() - 1) {
+                                err(node);
+                            }
+
+                            char sljedeci = s.charAt(i + 1);
+                            if (sljedeci != 'n' && sljedeci != 't' && sljedeci != '0' &&
+                                    sljedeci != '\'' && sljedeci != '\"' && sljedeci != '\\') {
+                                err(node);
+                            }
+                            i++;
+                        }
+                    }
                     node.type = new Type(Type.Basic.CHAR);
                     node.type.isSequence = true;
                     node.type.isConst = true;
@@ -321,6 +346,16 @@ public class SemA {
 
                     if (postfiks.type == null || !postfiks.type.isFunction) {
                         err(node);
+                    }
+
+                    Type fType = postfiks.type;
+                    if (fType.isFunction) {
+                        boolean noParameters = fType.paramTypes.isEmpty() ||
+                                (fType.paramTypes.size() == 1 && fType.paramTypes.get(0).basic == Type.Basic.VOID);
+
+                        if (!noParameters) {
+                            err(node);
+                        }
                     }
 
                     node.type = new Type(postfiks.type.returnType);
@@ -429,6 +464,10 @@ public class SemA {
                     process(castExp);
 
                     if (!canExplicitAssign(castExp.type, typeName.type)) {
+                        err(node);
+                    }
+
+                    if (node.children.get(3).type.isFunction || node.children.get(3).type.isSequence) {
                         err(node);
                     }
 
@@ -553,6 +592,10 @@ public class SemA {
                     }
                     process(node.children.get(2));
                     if (!canAssign(node.children.get(2).type, new Type(Type.Basic.INT))) {
+                        err(node);
+                    }
+                    if (node.children.get(0).type.isFunction || node.children.get(2).type.isFunction
+                        || node.children.get(0).type.isSequence || node.children.get(2).type.isSequence) {
                         err(node);
                     }
                     node.type = new Type(Type.Basic.INT);
@@ -784,6 +827,9 @@ public class SemA {
                     if (!canAssign(node.children.get(2).type, new Type(Type.Basic.INT))) {
                         err(node);
                     }
+                    if (node.children.get(2).type.isFunction || node.children.get(2).type.isSequence) {
+                        err(node);
+                    }
                     process(node.children.get(4));
                 } else if (node.children.size() == 7 &&
                         node.children.get(0).label.equals("KR_IF") &&
@@ -818,6 +864,11 @@ public class SemA {
                     if (!canAssign(node.children.get(3).type, new Type(Type.Basic.INT))) {
                         err(node);
                     }
+                    if (node.children.get(3).children.size() == 2) {
+                        if (node.children.get(3).children.get(0).type.isFunction || node.children.get(3).children.get(0).type.isSequence) {
+                            err(node);
+                        }
+                    }
                     loopDepth++;
                     process(node.children.get(5));
                     loopDepth--;
@@ -826,6 +877,11 @@ public class SemA {
                     process(node.children.get(3));
                     if (!canAssign(node.children.get(3).type, new Type(Type.Basic.INT))) {
                         err(node);
+                    }
+                    if (node.children.get(3).children.size() == 2) {
+                        if (node.children.get(3).children.get(0).type.isFunction || node.children.get(3).children.get(0).type.isSequence) {
+                            err(node);
+                        }
                     }
                     process(node.children.get(4));
                     loopDepth++;
@@ -924,6 +980,7 @@ public class SemA {
 
                         Symbol funcSymbol = new Symbol(funcName, funcType);
                         globalScope.localVariables.add(funcSymbol);
+                        allDefinedFunctions.put(funcName + "_" + funcType.paramTypes.toString(), funcType.paramTypes);
                     }
 
                     functionStack.push(returnType);
@@ -989,6 +1046,7 @@ public class SemA {
 
                         Symbol funcSymbol = new Symbol(funcName, funcType);
                         globalScope.localVariables.add(funcSymbol);
+                        allDefinedFunctions.put(funcName + "_" + funcType.paramTypes.toString(), funcType.paramTypes);
                     }
 
                     functionStack.push(returnType);
@@ -1214,6 +1272,7 @@ public class SemA {
                         }
                     } else {
                         curr.localVariables.add(new Symbol(node.children.get(0).lexValue, targetFuncType));
+                        allDeclaredFunctions.put(node.children.get(0).lexValue, targetFuncType);
                     }
 
                     node.type = targetFuncType;
@@ -1323,6 +1382,18 @@ public class SemA {
                     System.out.println("funkcija");
                     System.exit(0);
                 }
+            }
+        }
+        for (String name : allDeclaredFunctions.keySet()) {
+            if (!definedFunctions.contains(name)) {
+                System.out.println("funkcija");
+                System.exit(0);
+            }
+        }
+        for (String name : allDeclaredFunctions.keySet()) {
+            if (!allDefinedFunctions.containsKey(name)) {
+                System.out.println("funkcija");
+                System.exit(0);
             }
         }
     }
