@@ -1390,6 +1390,7 @@ public class SemA {
                 System.exit(0);
             }
         }
+
         for (String name : allDeclaredFunctions.keySet()) {
             if (!allDefinedFunctions.containsKey(name)) {
                 System.out.println("funkcija");
