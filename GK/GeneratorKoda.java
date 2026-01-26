@@ -1,7 +1,9 @@
 package GK;
 
 import java.io.BufferedReader;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.io.InputStreamReader;
 import java.util.*;
 
@@ -13,8 +15,14 @@ public class GeneratorKoda {
     static Map<String, Type> allDeclaredFunctions = new HashMap<>();
     static Map<String, List<Type>> allDefinedFunctions = new HashMap<>();
     static Stack<Type> functionStack = new Stack<>();
+    static Stack<Integer> breakStack = new Stack<>();
+    static Stack<Integer> continueStack = new Stack<>();
     static String currentFunctionName = "";
     static int currentStackOffset = 0;
+
+    static java.io.ByteArrayOutputStream funcBuffer = new java.io.ByteArrayOutputStream();
+    static PrintStream mainOut;
+    static PrintStream funcOut = new PrintStream(funcBuffer);
 
     // nodes used to analyze input
     static class Node {
@@ -28,6 +36,8 @@ public class GeneratorKoda {
         List<Type> types = null; // lista tipova argumenata (za <lista_argumenata>)
         List<String> lexValues = null;
         boolean alreadyOpenedScope = false;
+        boolean loadAddress = false;
+        boolean isGlobal = false;
 
         // variables important for output
         int row = -1;
@@ -274,10 +284,24 @@ public class GeneratorKoda {
                         err(node);
                     }
 
-                    int dist = currentStackOffset - sFound.offset - 4;
-                    System.out.println("    LDR R0, [SP, #" + dist + "]");
-                    System.out.println("    PUSH {R0}");
-                    currentStackOffset += 4;
+                    if (curr == scopeStack.firstElement()) {
+                         node.isGlobal = true;
+                         System.out.println("    LDR R0, =G_" + sFound.lexValue);
+                         if (!node.loadAddress && !sFound.type.isSequence) {
+                             System.out.println("    LDR R0, [R0]");
+                         }
+                         System.out.println("    PUSH {R0}");
+                         currentStackOffset += 4;
+                    } else {
+                        int dist = currentStackOffset - sFound.offset - 4;
+                        if (node.loadAddress || sFound.type.isSequence) {
+                            System.out.println("    ADD R0, SP, #" + dist);
+                        } else {
+                            System.out.println("    LDR R0, [SP, #" + dist + "]");
+                        }
+                        System.out.println("    PUSH {R0}");
+                        currentStackOffset += 4;
+                    }
 
                 } else if (node.children.size() == 1 && node.children.get(0).label.equals("BROJ")) {
                     try {
@@ -290,7 +314,7 @@ public class GeneratorKoda {
                     } catch (NumberFormatException nfe){
                         err(node);
                     }
-                    System.out.println("    MOV R0, #" + node.children.get(0).lexValue);
+                    System.out.println("    LDR R0, =" + node.children.get(0).lexValue);
                     System.out.println("    PUSH {R0}");
                     currentStackOffset += 4;
                 } else if (node.children.size() == 1 && node.children.get(0).label.equals("ZNAK")) {
@@ -327,15 +351,20 @@ public class GeneratorKoda {
 
             case "<postfiks_izraz>":
                 if (node.children.size() == 1 && node.children.get(0).label.equals("<primarni_izraz>")) {
-                    process(node.children.get(0));
-                    node.type = new Type(node.children.get(0).type);
-                    node.lvalue = node.children.get(0).lvalue;
+                    Node prim = node.children.get(0);
+                    prim.loadAddress = node.loadAddress;
+                    process(prim);
+                    node.type = new Type(prim.type);
+                    node.lvalue = prim.lvalue;
+                    node.isGlobal = prim.isGlobal;
                 } else if (node.children.size() == 4 && node.children.get(0).label.equals("<postfiks_izraz>") && node.children.get(1).label.equals("L_UGL_ZAGRADA") && node.children.get(2).label.equals("<izraz>") && node.children.get(3).label.equals("D_UGL_ZAGRADA")) {
 
                     Node postfiks = node.children.get(0);
                     Node izraz = node.children.get(2);
 
+                    postfiks.loadAddress = true;
                     process(postfiks);
+                    node.isGlobal = postfiks.isGlobal;
                     process(izraz);
 
                     if (postfiks.type == null || !postfiks.type.isSequence) {
@@ -353,33 +382,83 @@ public class GeneratorKoda {
                     if (izraz.type == null || !canAssign(izraz.type, intType)) {
                         err(node);
                     }
+
+                    System.out.println("    POP {R1}");
+                    System.out.println("    POP {R0}");
+                    System.out.println("    LSL R1, R1, #2");
+                    if (postfiks.isGlobal) {
+                        System.out.println("    ADD R0, R0, R1");
+                    } else {
+                        System.out.println("    SUB R0, R0, R1");
+                    }
+                    
+                    if (!node.loadAddress) {
+                        System.out.println("    LDR R0, [R0]");
+                    }
+                    System.out.println("    PUSH {R0}");
+                    currentStackOffset -= 4;
+
                 } else if (node.children.size() == 3 && node.children.get(0).label.equals("<postfiks_izraz>") && node.children.get(1).label.equals("L_ZAGRADA") && node.children.get(2).label.equals("D_ZAGRADA")) {
 
                     Node postfiks = node.children.get(0);
-                    process(postfiks);
-
-                    if (postfiks.type == null || !postfiks.type.isFunction) {
-                        err(node);
+                    // Manually resove function name to avoid loading it
+                    Node curr = postfiks;
+                    while(curr.children.size() == 1 && !curr.children.get(0).label.equals("IDN") && curr.children.get(0).label.startsWith("<")) {
+                        curr = curr.children.get(0);
                     }
+                    if (curr.children.size() != 1 || !curr.children.get(0).label.equals("IDN")) err(node);
+                    String funcName = curr.children.get(0).lexValue;
 
-                    Type fType = postfiks.type;
-                    if (fType.isFunction) {
-                        boolean noParameters = fType.paramTypes.isEmpty() ||
-                                (fType.paramTypes.size() == 1 && fType.paramTypes.get(0).basic == Type.Basic.VOID);
+                    Symbol funcSym = null;
+                    scopeNode globalScope = scopeStack.firstElement();
+                    for(Symbol s : globalScope.localVariables) {
+                        if(s.lexValue.equals(funcName) && s.type.isFunction) {
+                            funcSym = s;
+                            break;
+                        }
+                    }
+                    if (funcSym == null) err(node);
+                    postfiks.type = funcSym.type;
+
+                    if (postfiks.type.isFunction) {
+                        boolean noParameters = postfiks.type.paramTypes.isEmpty() ||
+                                (postfiks.type.paramTypes.size() == 1 && postfiks.type.paramTypes.get(0).basic == Type.Basic.VOID);
 
                         if (!noParameters) {
                             err(node);
                         }
-                    }
+                    } else err(node);
 
                     node.type = new Type(postfiks.type.returnType);
                     node.lvalue = false;
+
+                    System.out.println("    BL F_" + funcName.toUpperCase());
+                    System.out.println("    PUSH {R6}");
+                    currentStackOffset += 4;
+
                 } else if (node.children.size() == 4 && node.children.get(0).label.equals("<postfiks_izraz>") && node.children.get(1).label.equals("L_ZAGRADA") && node.children.get(2).label.equals("<lista_argumenata>") && node.children.get(3).label.equals("D_ZAGRADA")) {
 
                     Node postfiks = node.children.get(0);
                     Node listaArgumenata = node.children.get(2);
 
-                    process(postfiks);
+                    Node curr = postfiks;
+                    while(curr.children.size() == 1 && !curr.children.get(0).label.equals("IDN") && curr.children.get(0).label.startsWith("<")) {
+                        curr = curr.children.get(0);
+                    }
+                    if (curr.children.size() != 1 || !curr.children.get(0).label.equals("IDN")) err(node);
+                    String funcName = curr.children.get(0).lexValue;
+
+                    Symbol funcSym = null;
+                    scopeNode globalScope = scopeStack.firstElement();
+                    for(Symbol s : globalScope.localVariables) {
+                        if(s.lexValue.equals(funcName) && s.type.isFunction) {
+                            funcSym = s;
+                            break;
+                        }
+                    }
+                    if (funcSym == null) err(node);
+                    postfiks.type = funcSym.type;
+
                     process(listaArgumenata);
 
                     if (postfiks.type == null || !postfiks.type.isFunction) {
@@ -402,18 +481,72 @@ public class GeneratorKoda {
 
                     node.type = new Type(postfiks.type.returnType);
                     node.lvalue = false;
+                    
+                    System.out.println("    BL F_" + funcName.toUpperCase());
+                    int argSize = listaArgumenata.types.size() * 4;
+                    System.out.println("    ADD SP, SP, #" + argSize);
+                    currentStackOffset -= argSize; 
+                    
+                    System.out.println("    PUSH {R6}");
+                    currentStackOffset += 4;
+
                 } else if (node.children.size() == 2 &&
                         node.children.get(0).label.equals("<postfiks_izraz>") &&
                         (node.children.get(1).label.equals("OP_INC") ||
                                 node.children.get(1).label.equals("OP_DEC"))) {
 
                     Node postfiks = node.children.get(0);
+                    postfiks.loadAddress = true;
                     process(postfiks);
                     if (!postfiks.lvalue || !canAssign(postfiks.type, new Type(Type.Basic.INT))) {
                         err(node);
                     }
                     node.type = new Type(Type.Basic.INT);
                     node.lvalue = false;
+                    
+                    System.out.println("    POP {R1}");
+                    System.out.println("    LDR R0, [R1]");
+                    System.out.println("    PUSH {R0}"); // Result
+                    if (node.children.get(1).label.equals("OP_INC")) {
+                        System.out.println("    ADD R0, R0, #1");
+                    } else {
+                        System.out.println("    SUB R0, R0, #1");
+                    }
+                    System.out.println("    STR R0, [R1]");
+                    currentStackOffset -= 4; // POP R1 (-4). PUSH R0 (+4). Need to account for POP. Wait.
+                    // Process -> +4.
+                    // POP R1 -> -4. Stack +0 relative to start.
+                    // PUSH R0 -> +4. Stack +4 relative to start.
+                    // currentStackOffset is updated by process (+4).
+                    // I emit POP. currentStackOffset -= 4.
+                    // I emit PUSH. currentStackOffset += 4.
+                    // Net change 0.
+                    // The 'currentStackOffset -= 4' in my last edit was for the Array case (which popped 2, pushed 1).
+                    // This case pops 1 (Addr), pushes 1 (Val).
+                    // Wait. `process(postfiks)` pushed Address (+4).
+                    // `POP {R1}` (-4).
+                    // `PUSH {R0}` (+4).
+                    // So net is +4.
+                    // process already added 4.
+                    // So I just need to decrement for the POP and increment for PUSH.
+                    // So net 0 adjustment?
+                    // Yes. No 'currentStackOffset -= 4' here is needed?
+                    // Ah, process() adds 4.
+                    // I want final state to be +4.
+                    // It IS +4 (from process).
+                    // But I did POP/PUSH manually.
+                    // My manual changes to stack pointer MUST be reflected in `currentStackOffset`.
+                    // offset = offset - 4 + 4.
+                    // So NO change to `currentStackOffset` needed? Same value.
+                    // Valid coding checks:
+                    // offset starts at X.
+                    // process(postfiks): offset = X+4.
+                    // POP: offset = X.
+                    // PUSH: offset = X+4.
+                    // So `currentStackOffset` logic in code?
+                    // Code variable `currentStackOffset` holds the X+4 value.
+                    // I need it to hold X+4 value.
+                    // So I do nothing.
                 }
                 break;
 
@@ -435,26 +568,53 @@ public class GeneratorKoda {
 
             case "<unarni_izraz>":
                 if (node.children.size() == 1 && node.children.get(0).label.equals("<postfiks_izraz>")) {
-
-                    process(node.children.get(0));
-                    node.type = node.children.get(0).type;
-                    node.lvalue = node.children.get(0).lvalue;
+                    Node child = node.children.get(0);
+                    child.loadAddress = node.loadAddress; // Pass requirement
+                    process(child);
+                    node.type = child.type;
+                    node.lvalue = child.lvalue;
                 }
-                if (node.children.size() == 2 && (node.children.get(0).label.equals("OP_INC") || node.children.get(0).label.equals("OP_DEC")) && node.children.get(1).label.equals("<unarni_izraz>")) {
+                else if (node.children.size() == 2 && (node.children.get(0).label.equals("OP_INC") || node.children.get(0).label.equals("OP_DEC")) && node.children.get(1).label.equals("<unarni_izraz>")) {
 
-                    process(node.children.get(1));
-                    if (!node.children.get(1).lvalue || !canAssign(node.children.get(1).type, new Type(Type.Basic.INT))) {
+                    Node child = node.children.get(1);
+                    child.loadAddress = true;
+                    process(child);
+                    if (!child.lvalue || !canAssign(child.type, new Type(Type.Basic.INT))) {
                         err(node);
                     }
                     node.type = new Type(Type.Basic.INT);
                     node.lvalue = false;
+                    
+                    System.out.println("    POP {R1}");
+                    System.out.println("    LDR R0, [R1]");
+                    if (node.children.get(0).label.equals("OP_INC")) {
+                        System.out.println("    ADD R0, R0, #1");
+                    } else {
+                        System.out.println("    SUB R0, R0, #1");
+                    }
+                    System.out.println("    STR R0, [R1]");
+                    System.out.println("    PUSH {R0}");
                 }
-                if (node.children.size() == 2 && node.children.get(0).label.equals("<unarni_operator>") && node.children.get(1).label.equals("<cast_izraz>")) {
+                else if (node.children.size() == 2 && node.children.get(0).label.equals("<unarni_operator>") && node.children.get(1).label.equals("<cast_izraz>")) {
 
                     process(node.children.get(1));
                     if (!canAssign(node.children.get(1).type, new Type(Type.Basic.INT))) {
                         err(node);
                     }
+                    String operator = node.children.get(0).children.get(0).label;
+                    System.out.println("    POP {R0}");
+                    currentStackOffset -= 4;
+                    if (operator.equals("MINUS")) {
+                        System.out.println("    NEG R0, R0");
+                    } else if (operator.equals("OP_NEG")) {
+                        System.out.println("    CMP R0, #0");
+                        System.out.println("    MOVEQ R0, #1");
+                        System.out.println("    MOVNE R0, #0");
+                    } else if (operator.equals("OP_TILDA")) {
+                        System.out.println("    MVN R0, R0");
+                    }
+                    System.out.println("    PUSH {R0}");
+                    currentStackOffset += 4;
                     node.type = new Type(Type.Basic.INT);
                     node.lvalue = false;
                 }
@@ -543,6 +703,20 @@ public class GeneratorKoda {
                     }
                     node.type = new Type(Type.Basic.INT);
                     node.lvalue = false;
+
+                    System.out.println("    POP {R1}");
+                    currentStackOffset -= 4;
+                    System.out.println("    POP {R0}");
+                    currentStackOffset -= 4;
+                    if (node.children.get(1).label.equals("OP_PUTA")) {
+                         System.out.println("    MUL R0, R0, R1");
+                    } else if (node.children.get(1).label.equals("OP_DIJELI")) {
+                         System.out.println("    BL DO_DIV"); // R0 = R0 / R1
+                    } else if (node.children.get(1).label.equals("OP_MOD")) {
+                         System.out.println("    BL DO_MOD"); // R0 = R0 % R1
+                    }
+                    System.out.println("    PUSH {R0}");
+                    currentStackOffset += 4;
                 }
                 break;
 
@@ -570,7 +744,11 @@ public class GeneratorKoda {
                     currentStackOffset -= 4;
                     System.out.println("    POP {R0}");
                     currentStackOffset -= 4;
-                    System.out.println("    ADD R0, R0, R1");
+                    if (node.children.get(1).label.equals("PLUS")) {
+                        System.out.println("    ADD R0, R0, R1");
+                    } else {
+                        System.out.println("    SUB R0, R0, R1");
+                    }
                     System.out.println("    PUSH {R0}");
                     currentStackOffset += 4;
                 }
@@ -598,6 +776,27 @@ public class GeneratorKoda {
                     }
                     node.type = new Type(Type.Basic.INT);
                     node.lvalue = false;
+                    System.out.println("    POP {R1}");
+                    currentStackOffset -= 4;
+                    System.out.println("    POP {R0}");
+                    currentStackOffset -= 4;
+                    System.out.println("    CMP R0, R1");
+                    String op = node.children.get(1).label;
+                    if (op.equals("OP_LT")) {
+                         System.out.println("    MOVLT R0, #1");
+                         System.out.println("    MOVGE R0, #0");
+                    } else if (op.equals("OP_GT")) {
+                         System.out.println("    MOVGT R0, #1");
+                         System.out.println("    MOVLE R0, #0");
+                    } else if (op.equals("OP_LTE")) {
+                         System.out.println("    MOVLE R0, #1");
+                         System.out.println("    MOVGT R0, #0");
+                    } else if (op.equals("OP_GTE")) {
+                         System.out.println("    MOVGE R0, #1");
+                         System.out.println("    MOVLT R0, #0");
+                    }
+                    System.out.println("    PUSH {R0}");
+                    currentStackOffset += 4;
                 }
                 break;
 
@@ -621,6 +820,20 @@ public class GeneratorKoda {
                     }
                     node.type = new Type(Type.Basic.INT);
                     node.lvalue = false;
+                    System.out.println("    POP {R1}");
+                    currentStackOffset -= 4;
+                    System.out.println("    POP {R0}");
+                    currentStackOffset -= 4;
+                    System.out.println("    CMP R0, R1");
+                    if (node.children.get(1).label.equals("OP_EQ")) {
+                        System.out.println("    MOVEQ R0, #1");
+                        System.out.println("    MOVNE R0, #0");
+                    } else {
+                        System.out.println("    MOVNE R0, #1");
+                        System.out.println("    MOVEQ R0, #0");
+                    }
+                    System.out.println("    PUSH {R0}");
+                    currentStackOffset += 4;
                 }
                 break;
 
@@ -640,6 +853,13 @@ public class GeneratorKoda {
                     }
                     node.type = new Type(Type.Basic.INT);
                     node.lvalue = false;
+                    System.out.println("    POP {R1}");
+                    currentStackOffset -= 4;
+                    System.out.println("    POP {R0}");
+                    currentStackOffset -= 4;
+                    System.out.println("    AND R0, R0, R1");
+                    System.out.println("    PUSH {R0}");
+                    currentStackOffset += 4;
                 } else {
                     err(node);
                 }
@@ -661,6 +881,13 @@ public class GeneratorKoda {
                     }
                     node.type = new Type(Type.Basic.INT);
                     node.lvalue = false;
+                    System.out.println("    POP {R1}");
+                    currentStackOffset -= 4;
+                    System.out.println("    POP {R0}");
+                    currentStackOffset -= 4;
+                    System.out.println("    EOR R0, R0, R1");
+                    System.out.println("    PUSH {R0}");
+                    currentStackOffset += 4;
                 } else {
                     err(node);
                 }
@@ -682,6 +909,13 @@ public class GeneratorKoda {
                     }
                     node.type = new Type(Type.Basic.INT);
                     node.lvalue = false;
+                    System.out.println("    POP {R1}");
+                    currentStackOffset -= 4;
+                    System.out.println("    POP {R0}");
+                    currentStackOffset -= 4;
+                    System.out.println("    ORR R0, R0, R1");
+                    System.out.println("    PUSH {R0}");
+                    currentStackOffset += 4;
                 } else {
                     err(node);
                 }
@@ -697,10 +931,29 @@ public class GeneratorKoda {
                     if (!canAssign(node.children.get(0).type, new Type(Type.Basic.INT))) {
                         err(node);
                     }
-                    process(node.children.get(2));
+                    int labelFalse = node.id; // Unique ID
+                    int labelEnd = node.id + 1000000;
+                    // Eval A
+                    System.out.println("    POP {R0}"); // Result of A
+                    currentStackOffset -= 4;
+                    System.out.println("    CMP R0, #0");
+                    System.out.println("    BEQ L_FALSE_" + labelFalse);
+                    
+                    process(node.children.get(2)); // Eval B
                     if (!canAssign(node.children.get(2).type, new Type(Type.Basic.INT))) {
                         err(node);
                     }
+                    System.out.println("    POP {R0}"); // Result of B
+                    currentStackOffset -= 4;
+                    System.out.println("    CMP R0, #0");
+                    System.out.println("    BEQ L_FALSE_" + labelFalse);
+                    System.out.println("    MOV R0, #1");
+                    System.out.println("    B L_END_" + labelFalse);
+                    System.out.println("L_FALSE_" + labelFalse + ":");
+                    System.out.println("    MOV R0, #0");
+                    System.out.println("L_END_" + labelFalse + ":");
+                    System.out.println("    PUSH {R0}");
+                    currentStackOffset += 4;
                     node.type = new Type(Type.Basic.INT);
                     node.lvalue = false;
                 } else {
@@ -718,10 +971,29 @@ public class GeneratorKoda {
                     if (!canAssign(node.children.get(0).type, new Type(Type.Basic.INT))) {
                         err(node);
                     }
-                    process(node.children.get(2));
+                    int labelTrue = node.id;
+                    // Eval A
+                    System.out.println("    POP {R0}"); // Result of A
+                    currentStackOffset -= 4;
+                    System.out.println("    CMP R0, #0");
+                    System.out.println("    BNE L_TRUE_" + labelTrue);
+                    
+                    process(node.children.get(2)); // Eval B
                     if (!canAssign(node.children.get(2).type, new Type(Type.Basic.INT))) {
                         err(node);
                     }
+                    System.out.println("    POP {R0}");
+                    currentStackOffset -= 4;
+                    System.out.println("    CMP R0, #0");
+                    System.out.println("    BNE L_TRUE_" + labelTrue);
+                    System.out.println("    MOV R0, #0");
+                    System.out.println("    B L_END_" + labelTrue);
+                    System.out.println("L_TRUE_" + labelTrue + ":");
+                    System.out.println("    MOV R0, #1");
+                    System.out.println("L_END_" + labelTrue + ":");
+                    System.out.println("    PUSH {R0}");
+                    currentStackOffset += 4;
+                    
                     node.type = new Type(Type.Basic.INT);
                     node.lvalue = false;
                 } else {
@@ -739,32 +1011,11 @@ public class GeneratorKoda {
                     Node postfiks = node.children.get(0);
                     Node izraz = node.children.get(2);
 
+                    postfiks.loadAddress = true;
+                    process(postfiks);
                     process(izraz);
 
-                    Node primary = postfiks.children.get(0);
-
-                    boolean found = false;
-                    Symbol sFound = null;
-                    scopeNode curr = scopeStack.peek();
-                    while (!found && curr != null) {
-                        for (Symbol s : curr.localVariables) {
-                            if (s.lexValue.equals(primary.children.get(0).lexValue)) {
-                                found = true;
-                                sFound = s;
-                                node.type = s.type;
-                                node.lvalue = s.lvalue;
-                            }
-                        }
-                        curr = curr.parent;
-                    }
-
-                    if (sFound == null || sFound.type.isSequence || sFound.type.isConst || !sFound.lvalue) {
-                        err(node);
-                    }
-                    postfiks.type = sFound.type;
-                    postfiks.lvalue = sFound.lvalue;
-
-                    if (!postfiks.lvalue || postfiks.type.isSequence) {
+                    if (!postfiks.lvalue || postfiks.type.isConst) {
                         err(node);
                     }
                     if (izraz.type == null || !canAssign(izraz.type, postfiks.type)) {
@@ -772,11 +1023,10 @@ public class GeneratorKoda {
                     }
 
                     System.out.println("    POP {R0}");
-                    currentStackOffset -= 4;
-                    int dist = currentStackOffset - sFound.offset - 4;
-                    System.out.println("    STR R0, [SP, #" + dist + "]");
+                    System.out.println("    POP {R1}");
+                    System.out.println("    STR R0, [R1]");
                     System.out.println("    PUSH {R0}");
-                    currentStackOffset += 4;
+                    currentStackOffset -= 4;
 
                     node.type = new Type(postfiks.type);
                     node.lvalue = false;
@@ -879,6 +1129,7 @@ public class GeneratorKoda {
                         node.children.get(2).label.equals("<izraz>") &&
                         node.children.get(3).label.equals("D_ZAGRADA") &&
                         node.children.get(4).label.equals("<naredba>")) {
+                    int labelElse = node.id;
                     process(node.children.get(2));
                     if (!canAssign(node.children.get(2).type, new Type(Type.Basic.INT))) {
                         err(node);
@@ -886,7 +1137,12 @@ public class GeneratorKoda {
                     if (node.children.get(2).type.isFunction || node.children.get(2).type.isSequence) {
                         err(node);
                     }
+                    System.out.println("    POP {R0}");
+                    currentStackOffset -= 4;
+                    System.out.println("    CMP R0, #0");
+                    System.out.println("    BEQ L_END_" + labelElse);
                     process(node.children.get(4));
+                    System.out.println("L_END_" + labelElse + ":");
                 } else if (node.children.size() == 7 &&
                         node.children.get(0).label.equals("KR_IF") &&
                         node.children.get(1).label.equals("L_ZAGRADA") &&
@@ -895,54 +1151,109 @@ public class GeneratorKoda {
                         node.children.get(4).label.equals("<naredba>") &&
                         node.children.get(5).label.equals("KR_ELSE") &&
                         node.children.get(6).label.equals("<naredba>")) {
+                    int labelElse = node.id;
+                    int labelEnd = node.id + 1000000;
                     process(node.children.get(2));
                     if (!canAssign(node.children.get(2).type, new Type(Type.Basic.INT))) {
                         err(node);
                     }
+                    System.out.println("    POP {R0}");
+                    currentStackOffset -= 4;
+                    System.out.println("    CMP R0, #0");
+                    System.out.println("    BEQ L_ELSE_" + labelElse);
                     process(node.children.get(4));
+                    System.out.println("    B L_END_" + labelEnd);
+                    System.out.println("L_ELSE_" + labelElse + ":");
                     process(node.children.get(6));
+                    System.out.println("L_END_" + labelEnd + ":");
                 }
                 break;
 
             case "<naredba_petlje>":
+                int loopId = node.id;
+                int startLabel = loopId;
+                int endLabel = loopId + 1000000;
+                int stepLabel = loopId + 2000000;
+
                 if (node.children.size() == 5 && node.children.get(0).label.equals("KR_WHILE") && node.children.get(1).label.equals("L_ZAGRADA") && node.children.get(2).label.equals("<izraz>") && node.children.get(3).label.equals("D_ZAGRADA") && node.children.get(4).label.equals("<naredba>")) {
+                    continueStack.push(startLabel);
+                    breakStack.push(endLabel);
+                    System.out.println("L_START_" + startLabel + ":");
                     Node izraz = node.children.get(2);
                     process(izraz);
                     if (!canAssign(izraz.type, new Type(Type.Basic.INT))) {
                         err(node);
                     }
+                    System.out.println("    POP {R0}");
+                    currentStackOffset -= 4;
+                    System.out.println("    CMP R0, #0");
+                    System.out.println("    BEQ L_END_" + endLabel);
                     loopDepth++;
                     process(node.children.get(4));
                     loopDepth--;
+                    System.out.println("    B L_START_" + startLabel);
+                    System.out.println("L_END_" + endLabel + ":");
+                    continueStack.pop();
+                    breakStack.pop();
                 } else if (node.children.size() == 6 && node.children.get(0).label.equals("KR_FOR") && node.children.get(1).label.equals("L_ZAGRADA") && node.children.get(2).label.equals("<izraz_naredba>") && node.children.get(3).label.equals("<izraz_naredba>") && node.children.get(4).label.equals("D_ZAGRADA") && node.children.get(5).label.equals("<naredba>")) {
-                    process(node.children.get(2));
-                    process(node.children.get(3));
-                    if (!canAssign(node.children.get(3).type, new Type(Type.Basic.INT))) {
-                        err(node);
-                    }
-                    if (node.children.get(3).children.size() == 2) {
-                        if (node.children.get(3).children.get(0).type.isFunction || node.children.get(3).children.get(0).type.isSequence) {
+                    continueStack.push(stepLabel);
+                    breakStack.push(endLabel);
+                    process(node.children.get(2)); // Init
+                    System.out.println("L_START_" + startLabel + ":");
+                    Node cond = node.children.get(3);
+                    if (cond.children.size() == 2) {
+                        process(cond.children.get(0));
+                        if (!canAssign(cond.children.get(0).type, new Type(Type.Basic.INT))) {
                             err(node);
                         }
+                        if (cond.children.get(0).type.isFunction || cond.children.get(0).type.isSequence) {
+                            err(node);
+                        }
+                        System.out.println("    POP {R0}");
+                        currentStackOffset -= 4;
+                        System.out.println("    CMP R0, #0");
+                        System.out.println("    BEQ L_END_" + endLabel);
                     }
                     loopDepth++;
                     process(node.children.get(5));
                     loopDepth--;
+                    System.out.println("L_STEP_" + stepLabel + ":");
+                    System.out.println("    B L_START_" + startLabel);
+                    System.out.println("L_END_" + endLabel + ":");
+                    continueStack.pop();
+                    breakStack.pop();
                 } else if (node.children.size() == 7 && node.children.get(0).label.equals("KR_FOR") && node.children.get(1).label.equals("L_ZAGRADA") && node.children.get(2).label.equals("<izraz_naredba>") && node.children.get(3).label.equals("<izraz_naredba>") && node.children.get(4).label.equals("<izraz>") && node.children.get(5).label.equals("D_ZAGRADA") && node.children.get(6).label.equals("<naredba>")) {
-                    process(node.children.get(2));
-                    process(node.children.get(3));
-                    if (!canAssign(node.children.get(3).type, new Type(Type.Basic.INT))) {
-                        err(node);
-                    }
-                    if (node.children.get(3).children.size() == 2) {
-                        if (node.children.get(3).children.get(0).type.isFunction || node.children.get(3).children.get(0).type.isSequence) {
+                    continueStack.push(stepLabel);
+                    breakStack.push(endLabel);
+                    process(node.children.get(2)); // Init
+                    System.out.println("L_START_" + startLabel + ":");
+                    Node cond = node.children.get(3);
+                    if (cond.children.size() == 2) {
+                        process(cond.children.get(0));
+                         if (!canAssign(cond.children.get(0).type, new Type(Type.Basic.INT))) {
                             err(node);
                         }
+                        if (cond.children.get(0).type.isFunction || cond.children.get(0).type.isSequence) {
+                            err(node);
+                        }
+                        System.out.println("    POP {R0}");
+                        currentStackOffset -= 4;
+                        System.out.println("    CMP R0, #0");
+                        System.out.println("    BEQ L_END_" + endLabel);
                     }
-                    process(node.children.get(4));
                     loopDepth++;
                     process(node.children.get(6));
                     loopDepth--;
+                    System.out.println("L_STEP_" + stepLabel + ":");
+                    process(node.children.get(4)); // Step
+                    // Step expression result needs to be discarded?
+                    // Expressions push result.
+                    System.out.println("    POP {R0}");
+                    currentStackOffset -= 4;
+                    System.out.println("    B L_START_" + startLabel);
+                    System.out.println("L_END_" + endLabel + ":");
+                    continueStack.pop();
+                    breakStack.pop();
                 } else {
                     err(node);
                 }
@@ -953,32 +1264,37 @@ public class GeneratorKoda {
                     if (loopDepth == 0) {
                         err(node);
                     }
+                    if (node.children.get(0).label.equals("KR_BREAK")) {
+                         int target = breakStack.peek();
+                         System.out.println("    B L_END_" + target);
+                    } else {
+                         int target = continueStack.peek();
+                         if (target >= 2000000) { // Step label
+                             System.out.println("    B L_STEP_" + target);
+                         } else {
+                             System.out.println("    B L_START_" + target);
+                         }
+                    }
                 } else if (node.children.size() == 2 && node.children.get(0).label.equals("KR_RETURN") && node.children.get(1).label.equals("TOCKAZAREZ")) {
                     Type returnType = functionStack.peek();
                     if (returnType.basic != Type.Basic.VOID) {
                         err(node);
                     }
+                    System.out.println("    ADD SP, SP, #" + (currentStackOffset - 4));
                     System.out.println("    POP {PC}");
                 } else if (node.children.size() == 3 && node.children.get(0).label.equals("KR_RETURN") && node.children.get(1).label.equals("<izraz>") && node.children.get(2).label.equals("TOCKAZAREZ")) {
                     process(node.children.get(1));
-
                     if (!canAssign(node.children.get(1).type, functionStack.peek())) {
                         err(node);
                     }
                     System.out.println("    POP {R0}");
                     currentStackOffset -= 4;
-                    if (currentStackOffset > 4) { // 4 jer je LR na dnu
-                        int totalToClean = currentStackOffset - 4;
-                        System.out.println("    ADD SP, SP, #" + totalToClean);
-                    }
-                    if (currentFunctionName.equals("main")) {
-                        System.out.println("    MOV R6, R0");
-                    }
+                    System.out.println("    MOV R6, R0");
+                    System.out.println("    ADD SP, SP, #" + (currentStackOffset - 4));
                     System.out.println("    POP {PC}");
-                } else {
-                    err(node);
                 }
                 break;
+
 
             case "<prijevodna_jedinica>":
                 if (node.children.size() == 1) {
@@ -1001,9 +1317,13 @@ public class GeneratorKoda {
             // declarations and functions
 
             case "<definicija_funkcije>":
+                int savedOffset = currentStackOffset;
+                currentStackOffset = 0; // Reset stack offset for function body
+                System.setOut(funcOut);
                 currentFunctionName = node.children.get(1).lexValue;
                 System.out.println("F_" + currentFunctionName.toUpperCase() + ":");
                 System.out.println("    PUSH {LR}");
+                currentStackOffset += 4;
                 if (node.children.size() == 6 &&
                         node.children.get(0).label.equals("<ime_tipa>") &&
                         node.children.get(1).label.equals("IDN") &&
@@ -1126,6 +1446,7 @@ public class GeneratorKoda {
                     for (int i = 0; i < paramNames.size(); ++i) {
                         Symbol p = new Symbol(paramNames.get(i), paramTypes.get(i));
                         p.lvalue = true; // params are lvalues
+                        p.offset = -4 * (paramTypes.size() - i);
                         paramScope.localVariables.add(p);
                     }
 
@@ -1140,6 +1461,9 @@ public class GeneratorKoda {
                     scopeStack.pop();
                     functionStack.pop();
                 }
+                currentStackOffset = savedOffset;
+                System.out.flush();
+                System.setOut(mainOut);
                 break;
 
             case "<lista_parametara>":
@@ -1238,30 +1562,36 @@ public class GeneratorKoda {
                 Node izravni = node.children.get(0);
                 process(izravni);
 
+                scopeNode curr = scopeStack.peek();
+                Symbol sym = null;
+                String name = izravni.children.get(0).lexValue;
+                for (Symbol s : curr.localVariables){
+                    if (s.lexValue.equals(name)) {
+                        sym = s;
+                        break;
+                    }
+                }
+                boolean isGlobal = (curr == scopeStack.firstElement());
+
                 if (node.children.size() == 1) {
                     if (izravni.type.isConst) {
                         err(node);
                     }
-                    scopeNode curr = scopeStack.peek();
-                    Symbol sym = null;
-                    for (Symbol s : curr.localVariables){
-                        if (s.lexValue.equals(node.children.get(0).lexValue)) {
-                            sym = s;
-                            break;
+                    if (!isGlobal) {
+                        if (sym != null) {
+                            sym.offset = currentStackOffset;
+                            currentStackOffset += 4;
                         }
+                        System.out.println("    MOV R0, #0");
+                        System.out.println("    PUSH {R0}");
                     }
-                    if (sym != null) {
-                        sym.offset = currentStackOffset;
-                        currentStackOffset += 4;
-                    }
-                    System.out.println("    MOV R0, #0");
-                    System.out.println("    PUSH {R0}");
                     break;
                 }
 
                 Node init = node.children.get(2);
+                int startOffset = currentStackOffset;
                 process(init);
-
+                
                 Type varType = izravni.type;
                 if (varType == null) err(node);
 
@@ -1284,17 +1614,29 @@ public class GeneratorKoda {
                     for (Type U : init.types) {
                         if (!canAssign(U, T)) err(node);
                     }
-                }
-                scopeNode curr = scopeStack.peek();
-                Symbol sym = null;
-                for (Symbol s : curr.localVariables){
-                    if (s.lexValue.equals(node.children.get(0).lexValue)) {
-                        sym = s;
-                        break;
+                    
+                    int missing = varType.elemNr - init.types.size();
+                    for(int i=0; i<missing; ++i) {
+                         System.out.println("    MOV R0, #0");
+                         System.out.println("    PUSH {R0}");
+                         currentStackOffset += 4;
                     }
                 }
-                if (sym != null) {
-                    sym.offset = currentStackOffset - 4;
+
+                if (isGlobal) {
+                    int elemCount = varType.isSequence ? varType.elemNr : 1;
+                    System.out.println("    LDR R0, =G_" + name);
+                    System.out.println("    ADD R0, R0, #" + ((elemCount - 1) * 4));
+                    for(int i=0; i<elemCount; ++i) {
+                        System.out.println("    POP {R1}");
+                        System.out.println("    STR R1, [R0]");
+                        System.out.println("    SUB R0, R0, #4");
+                        currentStackOffset -= 4;
+                    }
+                } else {
+                    if (sym != null) {
+                        sym.offset = startOffset;
+                    }
                 }
                 break;
 
@@ -1314,6 +1656,13 @@ public class GeneratorKoda {
                     Symbol s = new Symbol(node.children.get(0).lexValue, t);
                     s.lvalue = !s.type.isConst && !s.type.isSequence;
                     curr.localVariables.add(s);
+                    
+                    if (curr == scopeStack.firstElement()) {
+                        PrintStream old = System.out;
+                        System.setOut(funcOut);
+                        System.out.println("G_" + s.lexValue + ": .word 0");
+                        System.setOut(old);
+                    }
 
                 } else if (node.children.size() == 4 && node.children.get(1).label.equals("L_UGL_ZAGRADA")) {
                     if (node.itype.basic == Type.Basic.VOID) err(node);
@@ -1336,6 +1685,15 @@ public class GeneratorKoda {
                     Symbol s = new Symbol(node.children.get(0).lexValue, t);
                     s.lvalue = false;
                     curr.localVariables.add(s);
+                    
+                    if (curr == scopeStack.firstElement()) {
+                        PrintStream old = System.out;
+                        System.setOut(funcOut);
+                        // Use .word 0 for each element to be safe and compatible
+                        System.out.println("G_" + s.lexValue + ":");
+                        for(int i=0; i<t.elemNr; ++i) System.out.println("    .word 0");
+                        System.setOut(old);
+                    }
 
                 } else if (node.children.size() == 4 && node.children.get(1).label.equals("L_ZAGRADA")) {
                     List<Type> paramTypes = new ArrayList<>();
@@ -1434,9 +1792,16 @@ public class GeneratorKoda {
     }
 
     public static void main(String[] args) {
+        try {
+            mainOut = new PrintStream(new FileOutputStream("a.s"));
+            System.setOut(mainOut);
+        } catch (IOException e) {
+            e.printStackTrace();
+            return;
+        }
+
         System.out.println("    LDR SP, =0x20000");
-        System.out.println("    BL F_MAIN");
-        System.out.println("    SWI 0");
+        
         Node root = null;
         try {
             root = loadTree();
@@ -1449,6 +1814,50 @@ public class GeneratorKoda {
 
         process(root);
         checkMain();
+        
+        System.out.println("    BL F_MAIN");
+        System.out.println("    SWI 0");
+        System.out.print(funcBuffer.toString());
+
+        System.out.println("\nMDIV:");
+        System.out.println("    PUSH {R2, R3, R4, R5, LR}");
+        System.out.println("    EOR R4, R0, R1");
+        System.out.println("    MOV R5, R0");
+        System.out.println("    CMP R0, #0");
+        System.out.println("    RSBMI R0, R0, #0");
+        System.out.println("    CMP R1, #0");
+        System.out.println("    RSBMI R1, R1, #0");
+        System.out.println("    MOV R2, #0");
+        System.out.println("    MOV R3, #0");
+        System.out.println("    MOV R12, #32");
+        System.out.println("div_loop:");
+        System.out.println("    MOV R2, R2, LSL #1");
+        System.out.println("    MOV R3, R3, LSL #1");
+        System.out.println("    MOVS R0, R0, LSL #1");
+        System.out.println("    ADC R3, R3, #0");
+        System.out.println("    CMP R3, R1");
+        System.out.println("    SUBGE R3, R3, R1");
+        System.out.println("    ADDGE R2, R2, #1");
+        System.out.println("    SUBS R12, R12, #1");
+        System.out.println("    BNE div_loop");
+        System.out.println("    MOV R0, R2");
+        System.out.println("    MOV R1, R3");
+        System.out.println("    CMP R4, #0");
+        System.out.println("    RSBMI R0, R0, #0");
+        System.out.println("    CMP R5, #0");
+        System.out.println("    RSBMI R1, R1, #0");
+        System.out.println("    POP {R2, R3, R4, R5, PC}");
+        System.out.println("DO_DIV:");
+        System.out.println("    PUSH {LR}");
+        System.out.println("    BL MDIV");
+        System.out.println("    POP {PC}");
+        System.out.println("DO_MOD:");
+        System.out.println("    PUSH {LR}");
+        System.out.println("    BL MDIV");
+        System.out.println("    MOV R0, R1");
+        System.out.println("    POP {PC}");
+        
+        mainOut.close();
     }
 
     static void checkMain() {
