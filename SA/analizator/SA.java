@@ -1,17 +1,18 @@
+package SA.analizator;
+
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.*;
 
-
 public class SA {
 
-    // Represents a grammar production rule: left -> right
     private static class Production{
         String left;
         ArrayList<String> right;
 
+        // Constructor
         Production(String left, ArrayList<String> right){
             this.left = left;
             this.right = right;
@@ -24,9 +25,7 @@ public class SA {
 
         @Override
         public boolean equals(Object o){
-            if(!(o instanceof Production)) return false;
-            Production s = (Production) o;
-            return s.hashCode() == this.hashCode();
+            return o instanceof Production s && hashCode() == s.hashCode();
         }
 
         @Override
@@ -35,7 +34,6 @@ public class SA {
         }
     }
 
-    // Represents a parser action: Shift, Reduct, Accept, or Starting
     private static class Action{
         String name;
         int amount;
@@ -63,7 +61,6 @@ public class SA {
                 return name + " " + production.toString();
         }
     }
-    // Represents a node in the parse tree
     private static class Node{
         String symbol;
         String display;
@@ -74,13 +71,11 @@ public class SA {
             this.symbol = symbol;
             this.display = symbol;
         }
-
         public Node(String symbol, String display){
             children = new ArrayList<>();
             this.symbol = symbol;
             this.display = display;
         }
-
         public boolean addChild(Node child){
             return children.add(child);
         }
@@ -90,7 +85,6 @@ public class SA {
         }
     }
 
-    // LR parser tables and grammar symbols
     static ArrayList<HashMap<String, Action>> actionTable = new ArrayList<>();
     static ArrayList<HashMap<String, Integer>> newStateTable =  new ArrayList<>();
     static ArrayList<String> terminated = new ArrayList<>();
@@ -98,9 +92,7 @@ public class SA {
     static ArrayList<String> syncSymb = new ArrayList<>();
     static int startingState = -1;
 
-    // Load LR parser tables from Actions.txt and NewStates.txt files
     public static void loadFromFiles(String actionsFile, String newStateFile) {
-        // Parse Actions.txt: read grammar symbols and action table
         try (BufferedReader actionsReader = new BufferedReader(new FileReader(actionsFile))) {
 
             String line;
@@ -112,21 +104,21 @@ public class SA {
                 if (line.startsWith("%V")) {
                     String[] tokens = line.split(" ");
                     unterminated.addAll(Arrays.asList(tokens));
-                    unterminated.remove(0);
+                    unterminated.removeFirst();
                     continue;
                 }
 
                 if (line.startsWith("%T")) {
                     String[] tokens = line.split(" ");
                     terminated.addAll(Arrays.asList(tokens));
-                    terminated.remove(0);
+                    terminated.removeFirst();
                     continue;
                 }
 
                 if (line.startsWith("%Syn")) {
                     String[] tokens = line.split(" ");
                     syncSymb.addAll(Arrays.asList(tokens));
-                    syncSymb.remove(0);
+                    syncSymb.removeFirst();
                     continue;
                 }
 
@@ -162,8 +154,6 @@ public class SA {
         } catch (IOException e) {
             e.printStackTrace();
         }
-
-        // Parse NewStates.txt: read new state table
         try (BufferedReader actionsReader = new BufferedReader(new FileReader(newStateFile))) {
             String line;
 
@@ -186,12 +176,8 @@ public class SA {
     }
 
 
-    // Map input position to parse tree nodes
     static HashMap<Integer, Node> terminalToNode= new HashMap<>();
-    // List of input terminal symbols
     static ArrayList<String> input = new ArrayList<>();
-
-    // Read input tokens from stdin
     private static void readInput(){
         BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
 
@@ -210,13 +196,11 @@ public class SA {
         input.add("#");
     }
 
-    // Main LR parser with error recovery
     static Node LRparse(){
         int pointer = 0;
         Stack<Integer> stateStack = new Stack<>();
         Stack<Node> nodeStack = new Stack<>();
         stateStack.push(startingState);
-
         while(true){
             if(pointer == input.size()){
                 System.err.println("Input not parsed");
@@ -224,62 +208,42 @@ public class SA {
             }
             int currState = stateStack.peek();
             String currSymbol = input.get(pointer);
-
-            // Error detected - no action defined for current state and symbol
             if(!actionTable.get(currState).containsKey(currSymbol)){
-                // Print error message with line number and expected/actual tokens
-                Node error = terminalToNode.get(pointer);
-                String row = error.toString().split(" ")[1];
+                Node errorNode = terminalToNode.get(pointer);
+                String row = errorNode.toString().split(" ")[1];
+
+                // Print error info
                 System.err.println("Syntax error on line " + row);
-                System.err.print("Expected input characters: ");
+                System.err.println("Expected input characters: ");
                 for(Map.Entry<String, Action> entry: actionTable.get(currState).entrySet())
                     System.err.print(entry.getKey() + " ");
                 System.err.println();
-                System.err.println("Read uniform character: " +  terminalToNode.get(pointer).toString());
+                System.err.println("Read uniform character: " + currSymbol + " (" + errorNode + ")");
 
-                // Skip input tokens until synchronization symbol is found
-                String syncSymbol = null;
-                while(pointer < input.size()){
-                    if(syncSymb.contains(input.get(pointer))){
-                        syncSymbol = input.get(pointer);
-                        break;
-                    }
+                // Skip input tokens until a synchronization symbol is found
+                while(pointer < input.size() && !syncSymb.contains(input.get(pointer)))
                     pointer++;
-                }
 
-                // No sync symbol found - parsing fails
-                if(syncSymbol == null){
+                if(pointer >= input.size()){
                     System.err.println("Input not parsed");
                     return null;
                 }
 
-                // Pop states from stack until action is defined for sync symbol
-                while(!stateStack.isEmpty()){
-                    currState = stateStack.peek();
-                    if(actionTable.get(currState).containsKey(syncSymbol)){
-                        // Found state with action for sync symbol - continue parsing
-                        break;
-                    }
+                // Found a synchronization symbol; try to find a state that accepts it
+                String sync = input.get(pointer);
+                while(!stateStack.isEmpty() && !actionTable.get(stateStack.peek()).containsKey(sync)){
                     stateStack.pop();
-                    if(!nodeStack.isEmpty()){
-                        nodeStack.pop();
-                    }
+                    if(!nodeStack.isEmpty()) nodeStack.pop();
                 }
-
-                // Stack is empty - parsing fails
                 if(stateStack.isEmpty()){
                     System.err.println("Input not parsed");
                     return null;
                 }
 
-                // Continue normal parsing from sync symbol
+                // Do not consume the synchronization symbol here; allow normal loop to handle it
                 continue;
             }
-
-            // Execute action for current state and symbol
             Action currAction = actionTable.get(currState).get(currSymbol);
-
-            // Shift: push state and advance input pointer
             if(currAction.name.equals("Shift")){
                 currState = currAction.amount;
                 stateStack.push(currState);
@@ -287,40 +251,35 @@ public class SA {
                 pointer++;
                 continue;
             }
-
-            // Reduct: pop states and build parse tree node
             if(currAction.name.equals("Reduct")){
                 Production prod = currAction.production;
                 int size = 0;
-                if(!prod.right.get(0).equals("$"))
+                if(!prod.right.getFirst().equals("$"))
                     size = prod.right.size();
 
                 Node newNode = new Node(prod.left);
                 for(int i = 0; i < size; i++){
                     stateStack.pop();
-                    newNode.children.add(0, nodeStack.pop());
+                    newNode.children.addFirst(nodeStack.pop());
                 }
                 nodeStack.push(newNode);
                 int nextState = newStateTable.get(stateStack.peek()).get(prod.left);
                 stateStack.push(nextState);
                 continue;
             }
-
-            // Accept: return root of parse tree
             return nodeStack.pop();
         }
     }
 
-    // Print parse tree with proper indentation
     private static void printOutput(Node node, Integer indent){
         for(int i = 0; i < indent; i++)
             System.out.print(" ");
 
         System.out.println(node);
-        if(node.children.isEmpty() && !terminalToNode.containsValue(node)){
+        if(node.children.isEmpty()){
             for(int i = 0; i < indent; i++)
                 System.out.print(" ");
-            System.out.println(" $");
+            System.out.println("$");
         }
         for(int i = 0; i < node.children.size(); i++)
             printOutput(node.children.get(i), indent + 1);

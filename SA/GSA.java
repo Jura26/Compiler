@@ -130,11 +130,11 @@ public class GSA {
         }
     }
 
-    // Grammar production rule: left -> right
     public static class Production{
         String left;
         ArrayList<String> right;
 
+        // Constructor
         Production(String left, ArrayList<String> right){
             this.left = left;
             this.right = right;
@@ -147,9 +147,7 @@ public class GSA {
 
         @Override
         public boolean equals(Object o){
-            if(!(o instanceof GSA.Production)) return false;
-            GSA.Production s = (GSA.Production) o;
-            return s.hashCode() == this.hashCode();
+            return o instanceof GSA.Production s && hashCode() == s.hashCode();
         }
 
         @Override
@@ -158,7 +156,6 @@ public class GSA {
         }
     }
 
-    // Parser action: Shift, Reduct, or Accept
     public static class Action{
         String name;
         int amount;
@@ -193,7 +190,7 @@ public class GSA {
     static ArrayList<String> syncSymb = new ArrayList<>();
     static ArrayList<Production> productions = new ArrayList<>();
 
-    // Parse input grammar definition from stdin
+    // function that parses input and stores it into above variables
     private static void ParseInput() throws IOException {
         BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
         String line;
@@ -201,7 +198,7 @@ public class GSA {
         while ((line = br.readLine()) != null) {
             if (line.isEmpty()) continue;
 
-            // Parse unterminated symbols
+            // unterminated symbols
             if (line.startsWith("%V")){
                 String[] parts = line.split(" ");
                 unterminated.addAll(Arrays.asList(parts));
@@ -209,7 +206,7 @@ public class GSA {
                 continue;
             }
 
-            // Parse terminated symbols
+            // terminated symbols
             if (line.startsWith("%T")){
                 String[] parts = line.split(" ");
                 terminated.addAll(Arrays.asList(parts));
@@ -217,7 +214,7 @@ public class GSA {
                 continue;
             }
 
-            // Parse synchronization symbols
+            // synchronisation terminated symbols
             if (line.startsWith("%Syn")){
                 String[] parts = line.split(" ");
                 syncSymb.addAll(Arrays.asList(parts));
@@ -225,16 +222,16 @@ public class GSA {
                 continue;
             }
 
-            // Parse production rules
+            // all productions
             if(!line.startsWith(" ")) {
                 // Left side of production
                 temp = new Production(line, new ArrayList<>());
                 productions.add(temp);
             } else {
-                // Right side of production
-                if(!productions.get(productions.size() - 1).right.isEmpty()){
-                    // New production with same left side (alternative)
-                    temp = new Production(productions.get(productions.size() - 1).left, new ArrayList<>());
+                // right side of Production
+                if(!productions.getLast().right.isEmpty()){
+                    // if it is not the first row it should construct next Production instead of concatenating with |
+                    temp = new Production(productions.getLast().left, new ArrayList<>());
                     productions.add(temp);
                 }
 
@@ -250,14 +247,14 @@ public class GSA {
     static boolean[][] StartsWithTable;
     static Map<ArrayList<String>, HashSet<String>> startsWithCache = new HashMap<>();
 
-    // Generate FIRST sets (StartsWithTable) for all symbols
+    // generate StartsWithTable and fills it
     private static void generateStartsWith(){
         boolean[][] DirectlyStartsWith = new boolean[unterminated.size()][unterminated.size() + terminated.size()];
         for (int i = 0; i < unterminated.size(); i++)
             for(int j = 0; j < unterminated.size() + terminated.size(); j++)
                 DirectlyStartsWith[i][j] = false;
 
-        // Fill DirectlyStartsWith
+        // fill DirectlyStartsWith
         for (Production prod : productions) {
             if(prod.right.get(0).equals("$")) continue;
 
@@ -284,7 +281,7 @@ public class GSA {
 
         boolean[][] StartsWith = Arrays.copyOf(DirectlyStartsWith, DirectlyStartsWith.length);
 
-        // Fill (undirect) StartsWith
+        // fill (undirect) StartsWith
         for(int i = 0; i < unterminated.size(); i++){
             HashSet<Integer> used = new HashSet<>();
             Stack<Integer> stack = new Stack<>();
@@ -306,7 +303,7 @@ public class GSA {
             }
         }
 
-        // Keep only the right side of the table
+        // keep only the right side of the table
         StartsWithTable = new boolean[unterminated.size()][terminated.size()];
         for(int i = 0; i < unterminated.size(); i++)
             for(int j = unterminated.size(); j < unterminated.size() + terminated.size(); j++){
@@ -314,7 +311,7 @@ public class GSA {
                 StartsWithTable[i][idx] = StartsWith[i][j];
             }
 
-        // Precompute Starts With
+        // precompute Starts With
         startsWithCache.put(new ArrayList<>(), new HashSet<>());
         ArrayList<String> temp = new ArrayList<>();
         temp.add("$");
@@ -351,7 +348,7 @@ public class GSA {
         }
     }
 
-    // Determine which nonterminals can derive empty string
+    // decide which undetermined is "empty"
     static HashSet<String> empty;
     private static void calculateEmpty(){
         empty = new HashSet<>();
@@ -391,6 +388,15 @@ public class GSA {
         HashSet<State> allStates = new HashSet<>(currStates);
         allStates.add(startingState);
 
+        // pre-compute map of productions by left side for faster lookup
+        Map<String, List<Production>> productionsByLeft = new HashMap<>();
+        for(Production production : productions) {
+            productionsByLeft.computeIfAbsent(production.left, k -> new ArrayList<>()).add(production);
+        }
+
+        // pre-compute terminated set as HashSet for O(1) lookups
+        HashSet<String> terminatedSet = new HashSet<>(terminated);
+
         boolean finished;
         do {
 
@@ -409,24 +415,26 @@ public class GSA {
 
                 transitions.add(new NFATransition(curr, newState, curr.nextSymb()));
 
-                if(terminated.contains(curr.nextSymb())) continue;
+                if(terminatedSet.contains(curr.nextSymb())) continue;
 
-                for(Production production : productions){
-                    if(production.left.equals(curr.nextSymb())) {
-                        // Calculate FIRST(suffix + curr.T)
+                // use pre-computed production map instead of iterating all productions
+                List<Production> relevantProductions = productionsByLeft.get(curr.nextSymb());
+                if(relevantProductions != null) {
+                    for(Production production : relevantProductions) {
+                        // calculate FIRST(suffix + curr.T)
                         HashSet<String> newT = new HashSet<>();
 
-                        // Get FIRST of the suffix
+                        // get FIRST of the suffix
                         HashSet<String> firstOfSuffix = startsWithCache.get(curr.suffix());
 
                         if(firstOfSuffix == null || firstOfSuffix.isEmpty() || canBeEmpty(curr.suffix())) {
-                            // If suffix can be empty, include curr.T
+                            // if suffix can be empty, include curr.T
                             if(firstOfSuffix != null) {
                                 newT.addAll(firstOfSuffix);
                             }
                             newT.addAll(curr.T);
                         } else {
-                            // Otherwise just use FIRST(suffix)
+                            // otherwise just use FIRST(suffix)
                             newT.addAll(firstOfSuffix);
                         }
 
@@ -471,15 +479,34 @@ public class GSA {
     private static DFA NFAtoDFA(NFA nka) {
         DFA dka = new DFA();
 
-        // Build epsilon adjacency map once for fast epsilon closure
-        Map<State, Set<State>> epsilonAdj = new HashMap<>();
+        Set<State> startSet = new HashSet<>();
+        startSet.add(nka.startingState);
+
+        // build epsilon transition map once
+        Map<State, Set<State>> epsilonTransitions = new HashMap<>();
         for (NFATransition t : nka.transitions) {
             if (t.transSymb.equals("$")) {
-                epsilonAdj.computeIfAbsent(t.start, k -> new HashSet<>()).add(t.end);
+                epsilonTransitions.computeIfAbsent(t.start, k -> new HashSet<>()).add(t.end);
             }
         }
 
-        // Build non-epsilon transition adjacency map
+        // starting state -> get epsilon closure
+        startSet = epsilonClosure(startSet, epsilonTransitions);
+
+        dka.startingState = startSet;
+
+        // use IdentityHashMap for fast lookups with Set<State> keys
+        Map<Integer, Set<State>> canonicalSets = new HashMap<>();
+        HashSet<Set<State>> dkaStates = new HashSet<>();
+        Queue<Set<State>> queue = new LinkedList<>();
+
+        int startHash = computeSetHash(startSet);
+        canonicalSets.put(startHash, startSet);
+        dkaStates.add(startSet);
+        queue.add(startSet);
+
+        // get all transition symbols
+        Set<String> alphabet = new HashSet<>();
         Map<State, Map<String, Set<State>>> outgoing = new HashMap<>();
         Set<String> alphabet = new HashSet<>();
         for (NFATransition t : nka.transitions) {
@@ -491,23 +518,7 @@ public class GSA {
             }
         }
 
-        // starting state -> get epsilon closure
-        Set<State> startSet = new HashSet<>();
-        startSet.add(nka.startingState);
-        startSet = epsilonClosureFast(startSet, epsilonAdj);
-
-        dka.startingState = startSet;
-
-        // Use proper hashing for canonical sets
-        Map<Integer, Set<State>> canonicalByHash = new HashMap<>();
-        HashSet<Set<State>> dkaStates = new HashSet<>();
-        Queue<Set<State>> queue = new LinkedList<>();
-
-        Set<State> canonicalStart = getCanonicalFast(canonicalByHash, startSet);
-        dkaStates.add(canonicalStart);
-        queue.add(canonicalStart);
-
-        // Cache epsilon closures
+        // cache epsilon closures using hash codes
         Map<Integer, Set<State>> epsilonCache = new HashMap<>();
 
         while (!queue.isEmpty()) {
@@ -516,25 +527,53 @@ public class GSA {
             for (String symb : alphabet) {
                 Set<State> newSet = new HashSet<>();
                 for (State s : current) {
-                    Set<State> targets = outgoing.getOrDefault(s, Collections.emptyMap())
-                            .getOrDefault(symb, Collections.emptySet());
-                    newSet.addAll(targets);
+                    Map<String, Set<State>> stateTransitions = outgoing.get(s);
+                    if (stateTransitions != null) {
+                        Set<State> targets = stateTransitions.get(symb);
+                        if (targets != null) {
+                            newSet.addAll(targets);
+                        }
+                    }
                 }
 
                 if (newSet.isEmpty()) continue;
 
-                // Fast epsilon closure with caching
-                int newSetHash = newSet.hashCode();
-                Set<State> closedSet = epsilonCache.get(newSetHash);
-                if (closedSet == null) {
-                    closedSet = epsilonClosureFast(newSet, epsilonAdj);
-                    epsilonCache.put(newSetHash, closedSet);
+                // get epsilon closure with caching
+                int newSetHash = computeSetHash(newSet);
+                Set<State> closureSet = epsilonCache.get(newSetHash);
+                if (closureSet == null) {
+                    closureSet = epsilonClosure(newSet, epsilonTransitions);
+                    epsilonCache.put(computeSetHash(closureSet), closureSet);
+                } else {
+                    // check if it is the same
+                    if (!newSet.equals(closureSet)) {
+                        closureSet = epsilonClosure(newSet, epsilonTransitions);
+                    }
                 }
 
-                Set<State> canonicalNew = getCanonicalFast(canonicalByHash, closedSet);
-                if (!dkaStates.contains(canonicalNew)) {
+                int closureHash = computeSetHash(closureSet);
+                Set<State> canonicalNew = canonicalSets.get(closureHash);
+
+                if (canonicalNew == null) {
+                    canonicalSets.put(closureHash, closureSet);
+                    canonicalNew = closureSet;
                     dkaStates.add(canonicalNew);
                     queue.add(canonicalNew);
+                } else if (!closureSet.equals(canonicalNew)) {
+                    // hash collision - need to find the right canonical set
+                    boolean found = false;
+                    for (Set<State> existing : dkaStates) {
+                        if (existing.equals(closureSet)) {
+                            canonicalNew = existing;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        canonicalNew = closureSet;
+                        dkaStates.add(canonicalNew);
+                        queue.add(canonicalNew);
+                    }
                 }
 
                 dka.transitions.add(new DFATransition(current, canonicalNew, symb));
@@ -542,6 +581,7 @@ public class GSA {
         }
 
         dka.states = dkaStates;
+        // optimize accepted states
         for (Set<State> sSet : dkaStates) {
             for (State s : sSet) {
                 if (nka.acceptedStates.contains(s)) {
@@ -554,19 +594,18 @@ public class GSA {
         return dka;
     }
 
-    // Compute epsilon closure of states using pre-built adjacency map
-    private static Set<State> epsilonClosureFast(Set<State> states, Map<State, Set<State>> epsilonAdj) {
+    private static Set<State> epsilonClosure(Set<State> states, Map<State, Set<State>> epsilonTransitions) {
         Set<State> closure = new HashSet<>(states);
         Stack<State> stack = new Stack<>();
         stack.addAll(states);
 
         while (!stack.isEmpty()) {
             State s = stack.pop();
-            Set<State> neighbors = epsilonAdj.get(s);
-            if (neighbors != null) {
-                for (State neighbor : neighbors) {
-                    if (closure.add(neighbor)) {
-                        stack.push(neighbor);
+            Set<State> targets = epsilonTransitions.get(s);
+            if (targets != null) {
+                for (State t : targets) {
+                    if (closure.add(t)) {
+                        stack.push(t);
                     }
                 }
             }
@@ -574,27 +613,17 @@ public class GSA {
         return closure;
     }
 
-    // Get or create canonical representative for a set of states
-    private static Set<State> getCanonicalFast(Map<Integer, Set<State>> canonicalByHash, Set<State> subset) {
-        int hash = subset.hashCode();
-        Set<State> existing = canonicalByHash.get(hash);
-        if (existing != null && existing.equals(subset)) {
-            return existing;
+    private static int computeSetHash(Set<State> states) {
+        int hash = 0;
+        for (State s : states) {
+            hash ^= s.hashCode();
         }
-        // Handle hash collision - rare but possible
-        for (Set<State> candidate : canonicalByHash.values()) {
-            if (candidate.equals(subset)) {
-                return candidate;
-            }
-        }
-        canonicalByHash.put(hash, subset);
-        return subset;
+        return hash;
     }
 
-    // Generate LR parser tables and write to output files
     private static void createTables(DFA dfa){
 
-        // Put states in a list for indexing
+        // put states in a list for indexing
         List<Set<State>> allStates = new ArrayList<>(dfa.states);
 
         // Each map is a row of the table, list is the whole table
@@ -651,7 +680,7 @@ public class GSA {
         // Write tables to output files
         try (PrintWriter actionsOut = new PrintWriter("./analizator/Actions.txt");
              PrintWriter newStatesOut = new PrintWriter("./analizator/NewStates.txt")) {
-
+            // header
             actionsOut.print("%V");
             for (String nt : unterminated) actionsOut.print(" " + nt);
             actionsOut.println();
@@ -666,6 +695,7 @@ public class GSA {
 
             int idx = -1;
             int i = 0;
+            // action table
             for (HashMap<String, Action> row : actionTable) {
                 List<String> rowEntries = new ArrayList<>();
                 if(row.containsKey("<%>"))
@@ -691,6 +721,7 @@ public class GSA {
             }
             actionsOut.println("%Start" + idx);
 
+            // new state table
             for (HashMap<String, Integer> row : newStateTable) {
                 List<String> rowEntries = new ArrayList<>();
                 for (String nt : unterminated) {
@@ -731,5 +762,6 @@ public class GSA {
         NFA nfa = constructNFA();
         DFA dfa = NFAtoDFA(nfa);
         createTables(dfa);
+
     }
 }
