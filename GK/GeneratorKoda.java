@@ -1884,6 +1884,7 @@ public class GeneratorKoda {
     }
 
     static void checkMain() {
+
         boolean foundReference = false;
         scopeNode global = scopeStack.pop();
         while(!scopeStack.isEmpty())
